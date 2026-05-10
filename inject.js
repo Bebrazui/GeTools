@@ -449,9 +449,11 @@
       '[SYSTEM]',
       'Результат выполнения локальной команды.',
       `Команда: ${cmd}`,
+      `Рабочая директория: ${result.cwd || currentCwd || 'не задана'}`,
       `Статус: ${result.success ? 'success' : 'error'}`,
     ]
 
+    if (result.timedOut) parts.push('⚠️ Команда прервана по таймауту')
     if (stdout) parts.push(`STDOUT:\n${stdout}`)
     if (stderr) parts.push(`STDERR:\n${stderr}`)
     if (!stdout && !stderr) parts.push('Вывод: OK')
@@ -1218,8 +1220,9 @@
       btnRun.textContent = 'Выполняется...'
 
       try {
-        const result = await window.electronAgent.exec(cmd)
-        
+        const result = await window.electronAgent.exec(cmd, { cwd: currentCwd || undefined })
+
+        saveCommandToHistory(cmd, result)
         commandStates.set(stateKey, { status: 'completed', result, updatedAt: Date.now() })
         renderCompleted(result)
 
@@ -1598,6 +1601,31 @@
     matches.forEach(m => processActionMatch(m.node, m.action))
   }
 
+  // ─── Замена аватара модели на логотип GeTools ────────────────────────────
+
+  const LOGO_DATA_URL = window.__geminiAgentLogoUrl || ''
+
+  function replaceModelAvatars() {
+    document.querySelectorAll('.avatar_primary_model.is-gpi-avatar, .avatar_primary_model').forEach(el => {
+      if (el.dataset.getoolsAvatar) return
+      el.dataset.getoolsAvatar = '1'
+
+      // Очищаем содержимое и вставляем логотип
+      el.textContent = ''
+      if (LOGO_DATA_URL) {
+        const img = document.createElement('img')
+        img.src = LOGO_DATA_URL
+        img.style.cssText = 'width:100%;height:100%;object-fit:contain;border-radius:50%;'
+        img.draggable = false
+        el.appendChild(img)
+      } else {
+        // Fallback — текстовый логотип
+        el.style.cssText += ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#a8c7fa;background:#1a1a2e;border-radius:50%;'
+        el.textContent = 'GT'
+      }
+    })
+  }
+
   // ─── Наблюдатель ───────────────────────────────────────────────────────────
 
   function runAgentPass() {
@@ -1612,6 +1640,7 @@
     }
     if (ultraThinkEnabled || ultraThinkAwaitingThink) renderThinkBlocks()
     scan()
+    replaceModelAvatars()
     updateAgentObserver()
   }
 
@@ -2048,43 +2077,230 @@
     if (fallbackRow && btn.parentElement !== fallbackRow) fallbackRow.appendChild(btn)
   }
 
-  function createUltraThinkButton() {
-    let btn = document.getElementById('gemini-agent-ultrathink')
+  // ─── История команд ──────────────────────────────────────────────────────
+
+  const CMD_HISTORY_KEY = 'getools_cmd_history'
+  const CMD_HISTORY_MAX = 50
+
+  function saveCommandToHistory(cmd, result) {
+    try {
+      const history = JSON.parse(localStorage.getItem(CMD_HISTORY_KEY) || '[]')
+      history.unshift({
+        cmd,
+        success: result.success,
+        stdout: (result.stdout || '').slice(0, 500),
+        stderr: (result.stderr || result.error || '').slice(0, 200),
+        cwd: result.cwd || '',
+        ts: Date.now(),
+      })
+      if (history.length > CMD_HISTORY_MAX) history.length = CMD_HISTORY_MAX
+      localStorage.setItem(CMD_HISTORY_KEY, JSON.stringify(history))
+    } catch (_) {}
+  }
+
+  function getSessionSummary() {
+    try {
+      const history = JSON.parse(localStorage.getItem(CMD_HISTORY_KEY) || '[]')
+      if (!history.length) return ''
+      const recent = history.slice(0, 10)
+      const lines = recent.map(h => {
+        const status = h.success ? '✓' : '✗'
+        const out = h.stdout ? ` → ${h.stdout.slice(0, 80).replace(/\r?\n/g, ' ')}` : ''
+        return `${status} ${h.cmd}${out}`
+      })
+      return `[Последние команды сессии]\n${lines.join('\n')}`
+    } catch (_) { return '' }
+  }
+
+  // ─── Кнопка рабочей директории ───────────────────────────────────────────
+
+  let currentCwd = null
+
+  async function initCwd() {
+    if (!window.electronAgent?.getCwd) return
+    const res = await window.electronAgent.getCwd()
+    if (res?.cwd) currentCwd = res.cwd
+    updateCwdButton()
+  }
+
+  function updateCwdButton() {
+    const btn = document.getElementById('gemini-agent-cwd')
+    if (!btn) return
+    const name = currentCwd ? currentCwd.split(/[\\/]/).pop() : 'Проект'
+    btn.textContent = '📁 ' + name
+    btn.title = currentCwd || 'Выбрать рабочую директорию'
+    btn.className = 'gemini-agent-autorun' + (currentCwd ? ' enabled' : '')
+  }
+
+  // Создаёт пункт меню в стиле нативных кнопок #toolbox-drawer-menu
+  function createToolboxItem({ id, icon, label, checked = false, onClick }) {
+    let btn = document.getElementById(id)
     if (!btn) {
       btn = document.createElement('button')
-      btn.id = 'gemini-agent-ultrathink'
+      btn.id = id
       btn.type = 'button'
-      btn.title = 'Add a hidden [ultrathink:on/off] marker before each user request'
+      btn.setAttribute('mat-list-item', '')
+      btn.setAttribute('role', 'menuitemcheckbox')
+      btn.setAttribute('aria-disabled', 'false')
+      btn.className = 'mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive toolbox-drawer-item-list-button mdc-list-item--with-leading-icon mat-mdc-list-item-single-line mdc-list-item--with-one-line gemini-agent-toolbox-item'
+    }
+
+    btn.setAttribute('aria-checked', checked ? 'true' : 'false')
+
+    // Иконка
+    let iconEl = btn.querySelector('mat-icon')
+    if (!iconEl) {
+      iconEl = document.createElement('mat-icon')
+      iconEl.setAttribute('role', 'img')
+      iconEl.setAttribute('aria-hidden', 'true')
+      iconEl.setAttribute('matlistitemicon', '')
+      iconEl.className = 'mat-icon notranslate mat-mdc-list-item-icon menu-icon gds-icon-l gem-menu-item-icon google-symbols mat-ligature-font mat-icon-no-color mdc-list-item__start'
+      btn.appendChild(iconEl)
+    }
+    iconEl.setAttribute('data-mat-icon-name', icon)
+    iconEl.setAttribute('fonticon', icon)
+    iconEl.textContent = icon
+
+    // Текст
+    let content = btn.querySelector('.mdc-list-item__content')
+    if (!content) {
+      content = document.createElement('span')
+      content.className = 'mdc-list-item__content'
+      const primary = document.createElement('span')
+      primary.className = 'mat-mdc-list-item-unscoped-content mdc-list-item__primary-text'
+      const featureContent = document.createElement('div')
+      featureContent.className = 'feature-content'
+      const labels = document.createElement('div')
+      labels.className = 'labels'
+      const labelEl = document.createElement('div')
+      labelEl.className = 'label gds-label-l getools-toolbox-label'
+      labels.appendChild(labelEl)
+      featureContent.appendChild(labels)
+      primary.appendChild(featureContent)
+      content.appendChild(primary)
+      btn.appendChild(content)
+
+      const focusIndicator = document.createElement('div')
+      focusIndicator.className = 'mat-focus-indicator'
+      btn.appendChild(focusIndicator)
+    }
+
+    const labelEl = btn.querySelector('.getools-toolbox-label')
+    if (labelEl) labelEl.textContent = label
+
+    btn.onclick = onClick
+    return btn
+  }
+
+  function insertIntoToolbox(btn) {
+    const toolbox = document.getElementById('toolbox-drawer-menu')
+    if (!toolbox) return false
+    if (toolbox.contains(btn)) return true
+    toolbox.appendChild(btn)
+    return true
+  }
+
+  function createCwdButton() {
+    if (!window.electronAgent?.pickCwd) return
+
+    const name = currentCwd ? currentCwd.split(/[\\/]/).pop() : 'Открыть проект'
+    const btn = createToolboxItem({
+      id: 'gemini-agent-cwd',
+      icon: 'folder_open',
+      label: name,
+      checked: !!currentCwd,
+      onClick: async () => {
+        const res = await window.electronAgent.pickCwd()
+        if (!res.canceled && res.cwd) {
+          currentCwd = res.cwd
+          // Обновляем лейбл
+          const lbl = btn.querySelector('.getools-toolbox-label')
+          if (lbl) lbl.textContent = res.cwd.split(/[\\/]/).pop()
+          btn.setAttribute('aria-checked', 'true')
+          await sendSystemMessage(
+            `[SYSTEM] Рабочая директория изменена: ${res.cwd}\nВсе команды теперь выполняются из этой папки. Используй относительные пути.`
+          )
+        }
+      },
+    })
+    insertIntoToolbox(btn)
+  }
+
+  function createAutoRunButton() {
+    let btn = document.getElementById('gemini-agent-autorun')
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.id = 'gemini-agent-autorun'
+      btn.type = 'button'
+      btn.title = 'Автоматически выполнять найденные команды'
     }
 
     function refresh() {
-      btn.className = 'gemini-agent-ultrathink' + (ultraThinkEnabled ? ' enabled' : '')
-      btn.textContent = 'Ultra Think ' + (ultraThinkEnabled ? 'ON' : 'OFF')
+      btn.className = 'gemini-agent-autorun' + (autoRunEnabled ? ' enabled' : '')
+      btn.textContent = 'Auto RUN ' + (autoRunEnabled ? 'ON' : 'OFF')
     }
 
-    btn.onclick = () => {
-      ultraThinkEnabled = !ultraThinkEnabled
-      localStorage.setItem('gemini_agent_ultrathink_enabled', ultraThinkEnabled ? 'true' : 'false')
+    btn.onclick = async () => {
+      if (autoRunEnabled) {
+        autoRunEnabled = false
+        localStorage.setItem('gemini_agent_autorun_enabled', 'false')
+        clearAutoRunTimers()
+        refresh()
+        console.log('[Agent] Auto RUN выключен')
+        return
+      }
+
+      const confirmation = await window.electronAgent.confirm(
+        'Включить Auto RUN?',
+        'Команды [EXECUTE: ...] будут выполняться автоматически сразу после появления. Включайте только если доверяете текущему диалогу.'
+      )
+
+      if (!confirmation.allowed) return
+
+      autoRunEnabled = true
+      autoRunEnabledAt = Date.now()
+      localStorage.setItem('gemini_agent_autorun_enabled', 'true')
+      markExistingExecuteBlocksProcessed()
       refresh()
-      console.log('[Agent] Ultra Think:', ultraThinkEnabled)
+      console.log('[Agent] Auto RUN включён')
     }
 
     refresh()
 
-    const autoRunButton = document.getElementById('gemini-agent-autorun')
-    if (autoRunButton) {
-      if (btn.previousElementSibling !== autoRunButton || btn.parentElement !== autoRunButton.parentElement) {
-        autoRunButton.insertAdjacentElement('afterend', btn)
+    const input = getInput()
+    const composer = input && findComposerRoot(input)
+
+    if (!composer) return
+
+    const toolsAnchor = findToolsAnchor(composer)
+    if (toolsAnchor) {
+      const anchor = toolsAnchor.closest('button') || toolsAnchor
+      if (btn.previousElementSibling !== anchor || btn.parentElement !== anchor.parentElement) {
+        anchor.insertAdjacentElement('afterend', btn)
       }
       return
     }
 
-    const input = getInput()
-    const composer = input && findComposerRoot(input)
-    if (!composer) return
-
     const fallbackRow = findComposerBottomRow(composer)
     if (fallbackRow && btn.parentElement !== fallbackRow) fallbackRow.appendChild(btn)
+  }
+
+  function createUltraThinkButton() {
+    const btn = createToolboxItem({
+      id: 'gemini-agent-ultrathink',
+      icon: 'psychology',
+      label: 'Ultra Think ' + (ultraThinkEnabled ? 'ON' : 'OFF'),
+      checked: ultraThinkEnabled,
+      onClick: () => {
+        ultraThinkEnabled = !ultraThinkEnabled
+        localStorage.setItem('gemini_agent_ultrathink_enabled', ultraThinkEnabled ? 'true' : 'false')
+        const lbl = btn.querySelector('.getools-toolbox-label')
+        if (lbl) lbl.textContent = 'Ultra Think ' + (ultraThinkEnabled ? 'ON' : 'OFF')
+        btn.setAttribute('aria-checked', ultraThinkEnabled ? 'true' : 'false')
+        console.log('[Agent] Ultra Think:', ultraThinkEnabled)
+      },
+    })
+    insertIntoToolbox(btn)
   }
 
   function isVisibleElement(el) {
@@ -2206,13 +2422,22 @@
   // createButton убрана — агент всегда включён
   setTimeout(createAutoRunButton, 1000)
   setTimeout(createUltraThinkButton, 1000)
+  setTimeout(createCwdButton, 1000)
   setTimeout(createPluginMenuButton, 1000)
   setInterval(createPluginMenuButton, 700)
+  // Toolbox items — вставляем когда toolbox открыт
+  setInterval(() => {
+    createUltraThinkButton()
+    createCwdButton()
+  }, 500)
   controlsTimer = setInterval(() => {
     createAutoRunButton()
     createUltraThinkButton()
+    createCwdButton()
     createPluginMenuButton()
   }, 15000)
+
+  setTimeout(initCwd, 1500)
 
   function getInput() {
     return document.querySelector('rich-textarea div[contenteditable="true"]')

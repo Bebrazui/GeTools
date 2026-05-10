@@ -23,6 +23,7 @@ app.commandLine.appendSwitch('disable-features', 'TrustedTypes')
 let mainWindow
 let geminiView       // BrowserView с Gemini — грузится в фоне
 let splashShownAt = 0
+let currentCwd = null  // Рабочая директория для команд
 
 function decodeCommandOutput(value) {
   if (!value || value.length === 0) return ''
@@ -134,8 +135,12 @@ function createWindow() {
 
       const script = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8')
       const prompt = fs.readFileSync(path.join(__dirname, 'AGENT_PROMPT.md'), 'utf8')
+      const logoUrl = (() => {
+        try { return 'data:image/png;base64,' + fs.readFileSync(path.join(__dirname, 'transparent.png')).toString('base64') }
+        catch (_) { return '' }
+      })()
       await wc.debugger.sendCommand('Runtime.evaluate', {
-        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\n${script}`
+        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\n${script}`
       })
 
       console.log('[Agent] Скрипт внедрён через CDP')
@@ -182,16 +187,33 @@ ipcMain.handle('agent:confirm', async (event, { title, detail }) => {
 })
 
 // Выполнить команду в терминале
-ipcMain.handle('agent:exec', async (event, { command }) => {
+ipcMain.handle('agent:exec', async (event, { command, timeout: cmdTimeout, cwd: cmdCwd }) => {
+  // Таймаут по умолчанию 5 минут, максимум 30 минут
+  const timeout = Math.min(
+    typeof cmdTimeout === 'number' && cmdTimeout > 0 ? cmdTimeout : 5 * 60 * 1000,
+    30 * 60 * 1000
+  )
+  // cwd: из команды → текущий проект → папка приложения
+  const execCwd = cmdCwd || currentCwd || __dirname
+
   return new Promise((resolve) => {
-    exec(`chcp 65001 > nul & ${command}`, { timeout: 30000, maxBuffer: 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
-      resolve({
-        success: !err,
-        stdout: decodeCommandOutput(stdout),
-        stderr: decodeCommandOutput(stderr),
-        error: err ? err.message : null,
-      })
-    })
+    const proc = exec(
+      `chcp 65001 > nul & ${command}`,
+      { timeout, maxBuffer: 4 * 1024 * 1024, encoding: 'buffer', cwd: execCwd },
+      (err, stdout, stderr) => {
+        const timedOut = err?.killed || err?.signal === 'SIGTERM'
+        resolve({
+          success: !err || timedOut,
+          stdout: decodeCommandOutput(stdout),
+          stderr: decodeCommandOutput(stderr),
+          error: timedOut
+            ? `Команда прервана по таймауту (${Math.round(timeout / 1000)}с)`
+            : err ? err.message : null,
+          timedOut: !!timedOut,
+          cwd: execCwd,
+        })
+      }
+    )
   })
 })
 
@@ -237,9 +259,20 @@ ipcMain.handle('agent:readFile', async (event, { filePath }) => {
 // Записать файл
 ipcMain.handle('agent:writeFile', async (event, { filePath, content }) => {
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(filePath, content, 'utf8')
-    return { success: true }
+    const resolved = path.resolve(filePath)
+    const cwd = process.cwd()
+    const appDir = __dirname
+
+    // Предупреждение если путь за пределами рабочей директории и папки приложения
+    const inCwd = resolved.startsWith(cwd + path.sep) || resolved === cwd
+    const inApp = resolved.startsWith(appDir + path.sep) || resolved === appDir
+    if (!inCwd && !inApp) {
+      console.warn(`[Agent] writeFile: путь за пределами рабочей директории: ${resolved}`)
+    }
+
+    fs.mkdirSync(path.dirname(resolved), { recursive: true })
+    fs.writeFileSync(resolved, content, 'utf8')
+    return { success: true, resolvedPath: resolved, outsideCwd: !inCwd && !inApp }
   } catch (e) {
     return { success: false, error: e.message }
   }
@@ -309,6 +342,28 @@ ipcMain.handle('window:maximize', () => {
   else mainWindow.maximize()
 })
 ipcMain.handle('window:close', () => mainWindow.close())
+
+// ─── Рабочая директория ──────────────────────────────────────────────────────
+
+ipcMain.handle('agent:getCwd', () => ({ cwd: currentCwd }))
+
+ipcMain.handle('agent:setCwd', async (event, { cwd: newCwd }) => {
+  if (newCwd && fs.existsSync(newCwd)) {
+    currentCwd = newCwd
+    return { success: true, cwd: currentCwd }
+  }
+  return { success: false, error: 'Папка не существует' }
+})
+
+ipcMain.handle('agent:pickCwd', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Выберите рабочую директорию проекта',
+  })
+  if (result.canceled || !result.filePaths[0]) return { canceled: true, cwd: currentCwd }
+  currentCwd = result.filePaths[0]
+  return { canceled: false, cwd: currentCwd }
+})
 
 // ─── App lifecycle ───────────────────────────────────────────────────────────
 
