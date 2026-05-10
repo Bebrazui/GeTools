@@ -1662,6 +1662,290 @@
 
   // ─── Кнопка статуса ───────────────────────────────────────────────────────
 
+  // ─── Оверлей плагинов ─────────────────────────────────────────────────────
+
+  // Создаёт mat-icon элемент как это делает Gemini — работает с google-symbols шрифтом
+  function matIcon(name, extraStyle) {
+    const el = document.createElement('mat-icon')
+    el.setAttribute('role', 'img')
+    el.setAttribute('aria-hidden', 'true')
+    el.setAttribute('data-mat-icon-type', 'font')
+    el.setAttribute('data-mat-icon-name', name)
+    el.setAttribute('fonticon', name)
+    el.className = 'mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color'
+    el.textContent = name
+    if (extraStyle) el.style.cssText = extraStyle
+    return el
+  }
+
+  function openPluginsOverlay() {
+    if (document.getElementById('getools-plugins-overlay')) {
+      document.getElementById('getools-plugins-overlay').style.setProperty('display', 'flex', 'important')
+      return
+    }
+
+    // Backdrop
+    const overlay = document.createElement('div')
+    overlay.id = 'getools-plugins-overlay'
+    setImportant(overlay, {
+      position: 'fixed',
+      inset: '0',
+      'z-index': '2147483646',
+      display: 'flex',
+      'align-items': 'stretch',
+      'justify-content': 'flex-end',
+      background: 'rgba(0,0,0,0.45)',
+      'backdrop-filter': 'blur(2px)',
+    })
+
+    // Drawer panel
+    const panel = document.createElement('div')
+    setImportant(panel, {
+      width: '520px',
+      'max-width': '100vw',
+      height: '100%',
+      background: '#1e1f20',
+      'border-left': '1px solid #2d2f31',
+      display: 'flex',
+      'flex-direction': 'column',
+      'overflow-y': 'auto',
+      'font-family': "'Google Sans', 'Segoe UI', system-ui, sans-serif",
+      color: '#e3e3e3',
+      animation: 'getools-slide-in 0.22s cubic-bezier(0.4,0,0.2,1)',
+    })
+
+    // Inject keyframe animation
+    if (!document.getElementById('getools-overlay-style')) {
+      const s = document.createElement('style')
+      s.id = 'getools-overlay-style'
+      s.textContent = `
+        @keyframes getools-slide-in {
+          from { transform: translateX(100%); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+        #getools-plugins-overlay * { box-sizing: border-box; }
+        .getools-plugin-card {
+          background: #28292a;
+          border-radius: 16px;
+          padding: 16px;
+          border: 1px solid #2d2f31;
+          transition: border-color 0.15s;
+        }
+        .getools-plugin-card:hover { border-color: #444746; }
+        .getools-switch { position:relative; width:40px; height:24px; flex-shrink:0; }
+        .getools-switch input { opacity:0; width:0; height:0; position:absolute; }
+        .getools-slider {
+          position:absolute; inset:0;
+          background:#444746; border-radius:999px;
+          transition:background 0.2s; cursor:pointer;
+        }
+        .getools-slider::after {
+          content:''; position:absolute;
+          left:4px; top:4px; width:16px; height:16px;
+          background:#fff; border-radius:50%;
+          transition:transform 0.2s;
+        }
+        .getools-switch input:checked + .getools-slider { background:#a8c7fa; }
+        .getools-switch input:checked + .getools-slider::after { transform:translateX(16px); background:#062e6f; }
+        .getools-upload-zone {
+          border: 2px dashed #444746; border-radius:16px;
+          padding:24px; text-align:center; cursor:pointer;
+          transition: border-color 0.15s, background 0.15s;
+          display:flex; flex-direction:column; align-items:center; gap:8px;
+        }
+        .getools-upload-zone:hover { border-color:#a8c7fa; background:rgba(168,199,250,0.04); }
+        .getools-input {
+          background:#131314; border:1px solid #444746; border-radius:10px;
+          color:#e3e3e3; padding:10px 14px; outline:none; font-size:14px;
+          font-family:inherit; flex:1; min-width:0;
+        }
+        .getools-input:focus { border-color:#a8c7fa; box-shadow:0 0 0 1px #a8c7fa; }
+        .getools-btn-primary {
+          background:#a8c7fa; color:#062e6f; border:none;
+          padding:10px 20px; border-radius:10px; font-weight:500;
+          font-size:14px; cursor:pointer; white-space:nowrap;
+          font-family:inherit; transition:opacity 0.15s;
+        }
+        .getools-btn-primary:hover { opacity:0.88; }
+      `
+      document.head.appendChild(s)
+    }
+
+    // ── Header ──
+    const header = document.createElement('div')
+    setImportant(header, {
+      display: 'flex',
+      'align-items': 'center',
+      'justify-content': 'space-between',
+      padding: '20px 24px 16px',
+      'border-bottom': '1px solid #2d2f31',
+      'flex-shrink': '0',
+    })
+
+    const title = document.createElement('div')
+    setImportant(title, { display: 'flex', 'align-items': 'center', gap: '10px' })
+
+    const titleIcon = matIcon('extension', 'font-size:22px;color:#a8c7fa;')
+    const titleText = document.createElement('span')
+    titleText.textContent = 'Плагины GeTools'
+    titleText.style.cssText = 'font-size:18px;font-weight:500;'
+    title.append(titleIcon, titleText)
+
+    const closeBtn = document.createElement('button')
+    closeBtn.style.cssText = 'background:none;border:none;color:#9aa0a6;cursor:pointer;padding:6px;border-radius:8px;display:flex;align-items:center;'
+    closeBtn.append(matIcon('close', 'font-size:22px;'))
+    closeBtn.onmouseenter = () => { closeBtn.style.color = '#e3e3e3'; closeBtn.style.background = '#333537' }
+    closeBtn.onmouseleave = () => { closeBtn.style.color = '#9aa0a6'; closeBtn.style.background = 'none' }
+    closeBtn.onclick = () => overlay.style.setProperty('display', 'none', 'important')
+
+    header.append(title, closeBtn)
+
+    // ── Body ──
+    const body = document.createElement('div')
+    setImportant(body, { padding: '24px', display: 'flex', 'flex-direction': 'column', gap: '24px', flex: '1' })
+
+    // Add by URL
+    const urlSection = document.createElement('div')
+    setImportant(urlSection, { display: 'flex', 'flex-direction': 'column', gap: '10px' })
+
+    const urlLabel = document.createElement('div')
+    setImportant(urlLabel, { display: 'flex', 'align-items': 'center', gap: '8px', 'font-size': '14px', color: '#a8c7fa', 'font-weight': '500' })
+    urlLabel.append(matIcon('link', 'font-size:18px;color:#a8c7fa;'))
+    const urlLabelText = document.createElement('span')
+    urlLabelText.textContent = 'Подключить по ссылке'
+    urlLabel.append(urlLabelText)
+
+    const urlRow = document.createElement('div')
+    setImportant(urlRow, { display: 'flex', gap: '10px' })
+    const urlInput = document.createElement('input')
+    urlInput.type = 'text'
+    urlInput.placeholder = 'https://example.com/plugin.json'
+    urlInput.className = 'getools-input'
+    const urlBtn = document.createElement('button')
+    urlBtn.className = 'getools-btn-primary'
+    urlBtn.textContent = 'Подключить'
+    urlRow.append(urlInput, urlBtn)
+    urlSection.append(urlLabel, urlRow)
+
+    // Upload zone
+    const uploadZone = document.createElement('div')
+    uploadZone.className = 'getools-upload-zone'
+    uploadZone.append(
+      matIcon('folder_zip', 'font-size:36px;color:#a8c7fa;'),
+      Object.assign(document.createElement('p'), { textContent: 'Загрузить ZIP архив', style: { margin: '0', color: '#a8c7fa', fontWeight: '500', fontSize: '14px' } }),
+      Object.assign(document.createElement('p'), { textContent: 'Перетащите файл или нажмите для выбора', style: { margin: '0', color: '#5f6368', fontSize: '12px' } })
+    )
+    uploadZone.onclick = () => {
+      const inp = document.createElement('input')
+      inp.type = 'file'; inp.accept = '.zip'
+      inp.onchange = (e) => { if (e.target.files[0]) alert('Загрузка: ' + e.target.files[0].name) }
+      inp.click()
+    }
+
+    // Divider
+    const divider = document.createElement('div')
+    setImportant(divider, { 'border-top': '1px solid #2d2f31' })
+
+    // Installed plugins header
+    const installedHeader = document.createElement('div')
+    setImportant(installedHeader, { display: 'flex', 'align-items': 'center', 'justify-content': 'space-between' })
+    const installedTitle = document.createElement('span')
+    installedTitle.textContent = 'Установленные плагины'
+    installedTitle.style.cssText = 'font-size:15px;font-weight:500;'
+    installedHeader.append(installedTitle)
+
+    // Кнопка настройки системных промптов
+    const promptsSection = document.createElement('div')
+    setImportant(promptsSection, {
+      display: 'flex', 'align-items': 'center', 'justify-content': 'space-between',
+      padding: '14px 16px', background: '#28292a', 'border-radius': '14px',
+      border: '1px solid #2d2f31', cursor: 'pointer',
+    })
+    const promptsLeft = document.createElement('div')
+    setImportant(promptsLeft, { display: 'flex', 'align-items': 'center', gap: '12px' })
+    const promptsIcon = matIcon('psychology', 'font-size:20px;color:#a8c7fa;')
+    const promptsInfo = document.createElement('div')
+    const promptsTitle = document.createElement('div')
+    promptsTitle.textContent = 'Системные промпты'
+    promptsTitle.style.cssText = 'font-size:14px;font-weight:500;'
+    const promptsDesc = document.createElement('div')
+    promptsDesc.textContent = 'Настроить инструкции из prompts.txt'
+    promptsDesc.style.cssText = 'font-size:12px;color:#9aa0a6;margin-top:2px;'
+    promptsInfo.append(promptsTitle, promptsDesc)
+    promptsLeft.append(promptsIcon, promptsInfo)
+    const promptsArrow = matIcon('arrow_forward', 'font-size:18px;color:#9aa0a6;')
+    promptsSection.append(promptsLeft, promptsArrow)
+    promptsSection.onclick = () => {
+      // Сбрасываем флаг "done" чтобы промпты добавились заново
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('getools_prompts_done:') || k.startsWith('getools_prompts_added_count:'))
+        .forEach(k => localStorage.removeItem(k))
+      overlay.style.setProperty('display', 'none', 'important')
+      location.href = 'https://gemini.google.com/saved-info'
+    }
+    promptsSection.onmouseenter = () => promptsSection.style.setProperty('border-color', '#444746', 'important')
+    promptsSection.onmouseleave = () => promptsSection.style.setProperty('border-color', '#2d2f31', 'important')
+
+    // Plugin list (заглушка)
+    const pluginList = document.createElement('div')
+    setImportant(pluginList, { display: 'flex', 'flex-direction': 'column', gap: '10px' })
+
+    const plugins = [
+      { name: 'Web Research Pro', desc: 'Поиск по документации в реальном времени', icon: 'search', color: '#4285f4', enabled: true },
+      { name: 'Notion Sync', desc: 'Синхронизация заметок и задач', icon: 'sync', color: '#34a853', enabled: false },
+      { name: 'Code Interpreter', desc: 'Запуск локальных скриптов', icon: 'code', color: '#9c27b0', enabled: true },
+    ]
+
+    plugins.forEach(p => {
+      const card = document.createElement('div')
+      card.className = 'getools-plugin-card'
+      setImportant(card, { display: 'flex', 'align-items': 'center', gap: '14px' })
+
+      const iconBox = document.createElement('div')
+      setImportant(iconBox, {
+        width: '44px', height: '44px', 'border-radius': '12px',
+        display: 'flex', 'align-items': 'center', 'justify-content': 'center',
+        background: p.color + '22', color: p.color, 'flex-shrink': '0',
+        overflow: 'hidden',
+      })
+      const ic = matIcon(p.icon)
+      ic.style.cssText = 'font-size:22px;line-height:1;display:block;color:inherit;'
+      iconBox.append(ic)
+
+      const info = document.createElement('div')
+      setImportant(info, { flex: '1', 'min-width': '0' })
+      const pName = document.createElement('div')
+      pName.textContent = p.name
+      pName.style.cssText = 'font-size:14px;font-weight:500;'
+      const pDesc = document.createElement('div')
+      pDesc.textContent = p.desc
+      pDesc.style.cssText = 'font-size:12px;color:#9aa0a6;margin-top:2px;'
+      info.append(pName, pDesc)
+
+      const sw = document.createElement('label')
+      sw.className = 'getools-switch'
+      const swInput = document.createElement('input')
+      swInput.type = 'checkbox'
+      swInput.checked = p.enabled
+      const swSlider = document.createElement('span')
+      swSlider.className = 'getools-slider'
+      sw.append(swInput, swSlider)
+
+      card.append(iconBox, info, sw)
+      pluginList.append(card)
+    })
+
+    body.append(urlSection, uploadZone, divider, promptsSection, installedHeader, pluginList)
+    panel.append(header, body)
+    overlay.append(panel)
+    document.body.appendChild(overlay)
+
+    // Close on backdrop click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.style.setProperty('display', 'none', 'important')
+    })
+  }
+
   function createButton() {
     if (document.getElementById('gemini-agent-status')) return
 
@@ -1821,30 +2105,66 @@
   function createPluginMenuButton() {
     if (!window.electronAgent?.openPlugins) return
 
-    const menus = [...document.querySelectorAll('[role="menu"], .mat-mdc-menu-panel, .cdk-overlay-pane, mat-menu, [data-test-id*="menu"], [data-test-id*="popover"]')]
-      .filter(looksLikeSettingsMenu)
+    // Angular CDK рендерит меню в cdk-overlay-container вне основного дерева
+    const overlayContainer = document.querySelector('.cdk-overlay-container')
+    const searchRoot = overlayContainer || document
 
-    for (const menu of menus) {
-      if (menu.querySelector('.gemini-agent-plugin-menu-item')) continue
+    const menuContent = searchRoot.querySelector('.mat-mdc-menu-content')
+    if (!menuContent) return
+    if (menuContent.querySelector('.gemini-agent-plugin-menu-item')) return
 
-      const item = document.createElement('button')
-      item.type = 'button'
-      item.className = 'gemini-agent-plugin-menu-item'
-      item.setAttribute('role', 'menuitem')
-      item.setAttribute('aria-label', 'Плагины')
-      item.innerHTML = '<span class="gemini-agent-plugin-menu-item-icon" aria-hidden="true">extension</span><span>Плагины</span>'
-      item.onclick = (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        window.electronAgent.openPlugins()
-      }
+    console.log('[Agent] Найдено меню, добавляю пункт Плагины')
 
-      const firstMenuItem = menu.querySelector('[role="menuitem"], button, a')
-      if (firstMenuItem?.parentElement && firstMenuItem.parentElement !== menu && menu.contains(firstMenuItem.parentElement)) {
-        firstMenuItem.parentElement.appendChild(item)
-      } else {
-        menu.appendChild(item)
-      }
+    // Строим DOM вручную — без innerHTML (Trusted Types)
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.setAttribute('mat-menu-item', '')
+    item.setAttribute('role', 'menuitem')
+    item.setAttribute('tabindex', '0')
+    item.setAttribute('aria-disabled', 'false')
+    item.className = 'mat-mdc-menu-item mat-focus-indicator gemini-agent-plugin-menu-item'
+
+    const itemText = document.createElement('span')
+    itemText.className = 'mat-mdc-menu-item-text'
+
+    const iconWrapper = document.createElement('gem-icon')
+    iconWrapper.setAttribute('size', 'large')
+    iconWrapper.className = 'gds-icon-l gem-menu-item-icon'
+
+    const icon = document.createElement('mat-icon')
+    icon.setAttribute('role', 'img')
+    icon.setAttribute('aria-hidden', 'true')
+    icon.setAttribute('data-mat-icon-type', 'font')
+    icon.setAttribute('data-mat-icon-name', 'extension')
+    icon.setAttribute('fonticon', 'extension')
+    icon.className = 'mat-icon notranslate gds-icon-l google-symbols mat-ligature-font mat-icon-no-color'
+    icon.textContent = 'extension'
+    iconWrapper.append(icon)
+
+    const labelWrap = document.createElement('div')
+    labelWrap.className = 'menu-entry-with-badge'
+    const label = document.createElement('span')
+    label.className = 'gds-label-l gem-menu-item-label'
+    label.textContent = 'Плагины GeTools'
+    labelWrap.append(label)
+
+    const ripple = document.createElement('div')
+    ripple.className = 'mat-ripple mat-mdc-menu-ripple'
+
+    itemText.append(iconWrapper, labelWrap)
+    item.append(itemText, ripple)
+
+    item.onclick = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      window.electronAgent.openPlugins()
+    }
+
+    const helpBtn = menuContent.querySelector('[data-test-id="help-button"], [data-test-id="send-feedback-button"]')
+    if (helpBtn) {
+      menuContent.insertBefore(item, helpBtn)
+    } else {
+      menuContent.appendChild(item)
     }
   }
 
@@ -2101,60 +2421,138 @@
       || document.querySelector('[contenteditable="true"]')
   }
 
+  // Парсит prompts.txt — разделитель: строка вида "первый промпт:", "второй промпт:" и т.д.
+  function parsePromptsFile(text) {
+    const lines = text.split(/\r?\n/)
+    const prompts = []
+    let current = null
+
+    for (const line of lines) {
+      if (/^[а-яёa-z\d]+\s+промпт\s*:/i.test(line.trim())) {
+        if (current !== null) prompts.push(current.trim())
+        current = ''
+      } else if (current !== null) {
+        current += (current ? '\n' : '') + line
+      }
+    }
+    if (current !== null && current.trim()) prompts.push(current.trim())
+    return prompts.filter(Boolean)
+  }
+
   async function setupSavedInfoPrompt() {
-    if (!AGENT_PROMPT || localStorage.getItem(SAVED_INFO_KEY) === 'done') return false
+    if (!AGENT_PROMPT) return false
 
     const setupUrl = 'https://gemini.google.com/saved-info'
+
+    // Сбрасываем старый формат ключа (миграция)
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('gemini_agent_saved_info_prompt:'))
+      .forEach(k => localStorage.removeItem(k))
+
+    // Читаем prompts.txt через electronAgent
+    let prompts = []
+    if (window.electronAgent?.readFile && window.__geminiAgentAppPath) {
+      try {
+        const result = await window.electronAgent.readFile(window.__geminiAgentAppPath + '\\prompts.txt')
+        if (result?.success && result.content) {
+          prompts = parsePromptsFile(result.content)
+          console.log('[Agent] Загружено промптов:', prompts.length)
+        }
+      } catch (e) {
+        console.warn('[Agent] Не удалось прочитать prompts.txt:', e)
+      }
+    }
+    if (!prompts.length) prompts = [SAVED_INFO_PROMPT]
+
+    const doneKey = 'getools_prompts_done:' + hashText(prompts.join('|'))
+    const addedKey = 'getools_prompts_added_count:' + hashText(prompts.join('|'))
+
+    // Все промпты уже добавлены
+    if (localStorage.getItem(doneKey) === 'done') return false
+
+    // Не на странице saved-info — редиректим
     if (!location.href.startsWith(setupUrl)) {
-      if (sessionStorage.getItem(SAVED_INFO_KEY + ':redirecting') === 'true') return false
-      sessionStorage.setItem(SAVED_INFO_KEY + ':redirecting', 'true')
       location.href = setupUrl
       return true
     }
 
-    if ((document.body?.textContent || '').includes(GETOOLS_MARKER)) {
-      localStorage.setItem(SAVED_INFO_KEY, 'done')
-      sessionStorage.removeItem(SAVED_INFO_KEY + ':redirecting')
-      setTimeout(() => {
-        location.href = 'https://gemini.google.com'
-      }, 500)
+    let addedCount = parseInt(localStorage.getItem(addedKey) || '0', 10)
+
+    if (addedCount >= prompts.length) {
+      localStorage.setItem(doneKey, 'done')
+      setTimeout(() => { location.href = 'https://gemini.google.com' }, 300)
       return true
     }
 
+    const promptToAdd = prompts[addedCount]
+    console.log(`[Agent] Добавляю промпт ${addedCount + 1}/${prompts.length}`)
+
+    // Ждём появления кнопки "Добавить"
+    let addButton = null
     for (let attempt = 0; attempt < 30; attempt++) {
-      const addButton = findButtonByText(/add|\u0434\u043e\u0431\u0430\u0432/i)
-      if (addButton) {
-        addButton.click()
-        break
-      }
+      addButton = findButtonByText(/^add$|^добавить$/i)
+        || [...document.querySelectorAll('button')].find(b => {
+          const t = (b.textContent || '').trim()
+          return /^add$/i.test(t) || /^добавить$/i.test(t)
+        })
+      if (addButton) { addButton.click(); break }
       await sleep(500)
     }
 
+    await sleep(1500)
+
+    // Ждём появления textarea/input для ввода промпта
     for (let attempt = 0; attempt < 30; attempt++) {
       const input = getSavedInfoInput()
       if (input) {
-        await pasteNativeValue(input, SAVED_INFO_PROMPT)
-        await sleep(300)
+        await pasteNativeValue(input, promptToAdd)
+        await sleep(400)
 
-        const saveButton = findButtonByText(/save|send|\u0441\u043e\u0445\u0440\u0430\u043d|\u043e\u0442\u043f\u0440\u0430\u0432/i)
-        if (saveButton && !saveButton.disabled && inputContains(input, SAVED_INFO_PROMPT)) {
+        if (!inputContains(input, promptToAdd)) {
+          await pasteNativeValue(input, promptToAdd)
+          await sleep(400)
+        }
+
+        // Ищем кнопку сохранения — строго по тексту "Save" / "Сохранить" / "Отправить"
+        // Исключаем toggle/switch элементы
+        const saveButton = [...document.querySelectorAll('button')].find(b => {
+          if (b.closest('mat-slide-toggle, [role="switch"], .mdc-switch')) return false
+          if (b.getAttribute('role') === 'switch') return false
+          const t = (b.textContent || '').replace(/\s+/g, ' ').trim()
+          const label = (b.getAttribute('aria-label') || '').trim()
+          return /^(save|сохранить|сохранить изменения|отправить|submit)$/i.test(t)
+            || /^(save|сохранить|отправить)$/i.test(label)
+        })
+
+        console.log('[Agent] Кнопка сохранения:', saveButton?.textContent?.trim(), '| disabled:', saveButton?.disabled)
+
+        if (saveButton && !saveButton.disabled && inputContains(input, promptToAdd)) {
           saveButton.click()
-          localStorage.setItem(SAVED_INFO_KEY, 'done')
-          sessionStorage.removeItem(SAVED_INFO_KEY + ':redirecting')
-          setTimeout(() => {
-            location.href = 'https://gemini.google.com'
-          }, 1500)
+          addedCount++
+          localStorage.setItem(addedKey, String(addedCount))
+          console.log(`[Agent] Промпт ${addedCount}/${prompts.length} сохранён`)
+          await sleep(5000)
+
+          if (addedCount >= prompts.length) {
+            localStorage.setItem(doneKey, 'done')
+            setTimeout(() => { location.href = 'https://gemini.google.com' }, 500)
+          } else {
+            setTimeout(() => { location.reload() }, 800)
+          }
           return true
         }
       }
       await sleep(500)
     }
 
-    sessionStorage.removeItem(SAVED_INFO_KEY + ':redirecting')
+    sessionStorage.removeItem('getools_prompts_redirecting')
     return false
   }
 
   setTimeout(setupSavedInfoPrompt, 1000)
+
+  // Открываем оверлей плагинов по событию от preload
+  window.addEventListener('getools:open-plugins', () => openPluginsOverlay())
 
   console.log('[Gemini Agent] Готов')
 })()

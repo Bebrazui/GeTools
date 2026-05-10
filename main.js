@@ -107,7 +107,7 @@ function createWindow() {
       const script = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8')
       const prompt = fs.readFileSync(path.join(__dirname, 'AGENT_PROMPT.md'), 'utf8')
       await mainWindow.webContents.debugger.sendCommand('Runtime.evaluate', {
-        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\n${script}`
+        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\n${script}`
       })
       
       console.log('[Agent] Скрипт внедрён через CDP')
