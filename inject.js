@@ -300,16 +300,7 @@
   function isLikelyRealCommand(cmd, sourceText) {
     const value = cleanCommand(cmd)
     if (!value) return false
-    if (/^(команда|command|cmd|ваша команда|your command|...|реальная_команда|real_command)$/i.test(value)) return false
-
-    const lowerSource = (sourceText || '').toLowerCase()
-    if (lowerSource.includes('пример') || lowerSource.includes('формат') || lowerSource.includes('шаблон')) {
-      const meaningfulLines = lowerSource
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean)
-      if (meaningfulLines.length > 1) return false
-    }
+    if (/^(команда|command|cmd|ваша команда|your command|\.{3}|реальная_команда|real_command)$/i.test(value)) return false
 
     return true
   }
@@ -391,10 +382,58 @@
     return textNode.parentElement
   }
 
+  // Найти ближайший предок который находится в основном документе (не в Shadow DOM)
+  function findDocumentAnchor(el) {
+    let node = el
+    while (node) {
+      if (document.body.contains(node)) return node
+      // Вышли за пределы shadow root — берём host
+      const root = node.getRootNode()
+      if (root instanceof ShadowRoot) {
+        node = root.host
+      } else {
+        break
+      }
+    }
+    return null
+  }
+
   function insertAfter(target, node) {
     if (!target || !target.parentNode) return false
     target.parentNode.insertBefore(node, target.nextSibling)
     return true
+  }
+
+  // Вставить карточку после target, поднявшись до основного документа если нужно
+  function insertCardAfter(target, card) {
+    if (!target) return false
+
+    // Если target уже в основном документе — вставляем рядом
+    if (document.body.contains(target) && target.parentNode) {
+      target.parentNode.insertBefore(card, target.nextSibling)
+      return true
+    }
+
+    // target внутри Shadow DOM — поднимаемся до host-элемента в основном документе
+    let node = target
+    while (node) {
+      const root = node.getRootNode()
+      if (root === document) {
+        // node в основном документе
+        if (node.parentNode) {
+          node.parentNode.insertBefore(card, node.nextSibling)
+          return true
+        }
+        break
+      }
+      if (root instanceof ShadowRoot) {
+        node = root.host
+      } else {
+        break
+      }
+    }
+
+    return false
   }
 
   function truncateText(text, maxLength = 12000) {
@@ -1216,49 +1255,248 @@
   function createFileCard(filePath, content) {
     const safePath = String(filePath || '').trim()
     const preview = String(content || '')
-    const host = createCard(`CREATE_FILE ${safePath}`)
+
+    const host = document.createElement('div')
+    host.className = 'gemini-agent-host'
     host.setAttribute('data-gemini-agent-create-file', safePath)
+    setImportant(host, {
+      display: 'block',
+      margin: '16px 0',
+      'max-width': '520px',
+      'font-size': '16px',
+      'line-height': 'normal',
+      'white-space': 'normal',
+    })
 
-    const root = host.shadowRoot
-    const codeBox = root?.querySelector('.cmd')
-    const headerText = root?.querySelector('.header span')
-    const btnRun = root?.querySelector('.run')
-    const resultBox = root?.querySelector('.result')
+    const root = host.attachShadow({ mode: 'open' })
 
-    if (headerText) headerText.textContent = 'Запись файла'
-    if (codeBox) codeBox.textContent = `${safePath}\n\n${preview.slice(0, 4000)}${preview.length > 4000 ? '\n\n[...content truncated]' : ''}`
-    if (btnRun) btnRun.textContent = 'Записать'
+    const shadowStyle = document.createElement('style')
+    shadowStyle.textContent = `
+      :host {
+        all: initial;
+        display: block !important;
+        margin: 16px 0 !important;
+        max-width: 448px !important;
+        font-family: "Google Sans", "Segoe UI", system-ui, -apple-system, sans-serif !important;
+      }
+      .card {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        padding: 20px 24px;
+        background: #ffffff;
+        border: 0;
+        border-radius: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        color: #1f1f1f;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+        color: #444746;
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .file-icon {
+        width: 20px;
+        height: 20px;
+        color: #0b57d0;
+        flex: 0 0 auto;
+      }
+      .path-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #f0f4f9;
+        padding: 10px 14px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        min-width: 0;
+      }
+      .path-icon {
+        width: 16px;
+        height: 16px;
+        color: #5f6368;
+        flex: 0 0 auto;
+      }
+      .path-text {
+        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-size: 13px;
+        color: #1f1f1f;
+        word-break: break-all;
+        flex: 1;
+        min-width: 0;
+      }
+      .lines-badge {
+        font-size: 11px;
+        color: #5f6368;
+        background: #e8eaed;
+        border-radius: 8px;
+        padding: 2px 8px;
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
+      .btns {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        align-items: center;
+      }
+      button {
+        font-family: "Google Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 999px;
+        padding: 10px 20px;
+        cursor: pointer;
+        transition: background 0.16s ease, box-shadow 0.16s ease, transform 0.08s ease;
+        border: none;
+      }
+      .deny {
+        background: transparent;
+        color: #0b57d0;
+      }
+      .deny:hover { background: #f1f3f4; }
+      .run {
+        background: #0b57d0;
+        color: #fff;
+        padding-inline: 24px;
+      }
+      .run:hover { box-shadow: 0 2px 6px rgba(60,64,67,0.22); }
+      .run:active { transform: scale(0.95); }
+      .run:disabled { opacity: 0.6; cursor: not-allowed; }
+      .result {
+        display: none;
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-size: 12.5px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .success { display: block; background: rgba(129,201,149,0.18); color: #1e6e3a; }
+      .error   { display: block; background: rgba(242,139,130,0.16); color: #b3261e; }
+      .card.done .btns { display: none; }
+      @media (prefers-color-scheme: dark) {
+        .card { background: #1f1f1f; box-shadow: 0 1px 3px rgba(0,0,0,0.45); color: #e3e3e3; }
+        .header { color: #c4c7c5; }
+        .path-row { background: #2b2c2f; }
+        .path-text { color: #e3e3e3; }
+        .lines-badge { background: #3c3f43; color: #9aa0a6; }
+        .path-icon { color: #9aa0a6; }
+        .deny { color: #a8c7fa; }
+        .deny:hover { background: rgba(232,234,237,0.08); }
+        .run { background: #a8c7fa; color: #062e6f; }
+        .success { background: rgba(129,201,149,0.18); color: #81c995; }
+        .error   { background: rgba(242,139,130,0.16); color: #f28b82; }
+      }
+    `
+
+    const card = document.createElement('div')
+    card.className = 'card'
+
+    // Header
+    const header = document.createElement('div')
+    header.className = 'header'
+
+    const fileIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    fileIcon.setAttribute('viewBox', '0 0 24 24')
+    fileIcon.setAttribute('fill', 'none')
+    fileIcon.setAttribute('stroke', 'currentColor')
+    fileIcon.setAttribute('stroke-width', '2')
+    fileIcon.setAttribute('stroke-linecap', 'round')
+    fileIcon.setAttribute('stroke-linejoin', 'round')
+    fileIcon.classList.add('file-icon')
+    const fp1 = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    fp1.setAttribute('d', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z')
+    const fp2 = document.createElementNS('http://www.w3.org/2000/svg', 'polyline')
+    fp2.setAttribute('points', '14 2 14 8 20 8')
+    fileIcon.append(fp1, fp2)
+
+    const headerText = document.createElement('span')
+    headerText.textContent = 'Запись файла'
+    header.append(fileIcon, headerText)
+
+    // Path row
+    const pathRow = document.createElement('div')
+    pathRow.className = 'path-row'
+
+    const pathIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    pathIcon.setAttribute('viewBox', '0 0 24 24')
+    pathIcon.setAttribute('fill', 'none')
+    pathIcon.setAttribute('stroke', 'currentColor')
+    pathIcon.setAttribute('stroke-width', '2')
+    pathIcon.setAttribute('stroke-linecap', 'round')
+    pathIcon.setAttribute('stroke-linejoin', 'round')
+    pathIcon.classList.add('path-icon')
+    const pi1 = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    pi1.setAttribute('d', 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z')
+    pathIcon.append(pi1)
+
+    const pathText = document.createElement('span')
+    pathText.className = 'path-text'
+    pathText.textContent = safePath
+
+    const lineCount = preview.split('\n').length
+    const linesBadge = document.createElement('span')
+    linesBadge.className = 'lines-badge'
+    linesBadge.textContent = `${lineCount} стр.`
+
+    pathRow.append(pathIcon, pathText, linesBadge)
+
+    // Buttons
+    const btns = document.createElement('div')
+    btns.className = 'btns'
+
+    const btnDeny = document.createElement('button')
+    btnDeny.type = 'button'
+    btnDeny.className = 'deny'
+    btnDeny.textContent = 'Отклонить'
+
+    const btnRun = document.createElement('button')
+    btnRun.type = 'button'
+    btnRun.className = 'run'
+    btnRun.textContent = 'Записать'
+
+    const resultBox = document.createElement('div')
+    resultBox.className = 'result'
+
+    btns.append(btnDeny, btnRun)
+    card.append(header, pathRow, btns, resultBox)
+    root.append(shadowStyle, card)
+
+    btnDeny.onclick = (e) => { e.stopPropagation(); host.remove() }
 
     let executed = false
-    if (btnRun) {
-      btnRun.onclick = async (e) => {
-        e.stopPropagation()
-        if (executed) return
-        executed = true
-        btnRun.disabled = true
-        btnRun.textContent = 'Записывается...'
-        host.setAttribute('data-gemini-agent-card-state', 'running')
+    btnRun.onclick = async (e) => {
+      e.stopPropagation()
+      if (executed) return
+      executed = true
+      btnRun.disabled = true
+      btnRun.textContent = 'Записывается...'
+      host.setAttribute('data-gemini-agent-card-state', 'running')
 
-        try {
-          const result = await window.electronAgent.writeFile(safePath, preview)
-          const success = result.success
-          if (headerText) headerText.textContent = success ? 'Файл записан' : 'Ошибка записи'
-          if (resultBox) {
-            resultBox.className = 'result ' + (success ? 'success' : 'error')
-            resultBox.textContent = success ? `OK: ${safePath}` : (result.error || 'Ошибка')
-          }
-          host.setAttribute('data-gemini-agent-card-state', success ? 'success' : 'error')
-          await sendSystemMessage(formatCreateFileResult(safePath, result))
-        } catch (err) {
-          const result = { success: false, error: err.message }
-          if (headerText) headerText.textContent = 'Ошибка записи'
-          if (resultBox) {
-            resultBox.className = 'result error'
-            resultBox.textContent = err.message
-          }
-          host.setAttribute('data-gemini-agent-card-state', 'error')
-          await sendSystemMessage(formatCreateFileResult(safePath, result))
-        }
+      try {
+        const result = await window.electronAgent.writeFile(safePath, preview)
+        const success = result.success
+        headerText.textContent = success ? 'Файл записан' : 'Ошибка записи'
+        resultBox.className = 'result ' + (success ? 'success' : 'error')
+        resultBox.textContent = success ? `✓ ${safePath}` : (result.error || 'Ошибка')
+        card.classList.add('done')
+        host.setAttribute('data-gemini-agent-card-state', success ? 'success' : 'error')
+        await sendSystemMessage(formatCreateFileResult(safePath, result))
+      } catch (err) {
+        const result = { success: false, error: err.message }
+        headerText.textContent = 'Ошибка записи'
+        resultBox.className = 'result error'
+        resultBox.textContent = err.message
+        card.classList.add('done')
+        host.setAttribute('data-gemini-agent-card-state', 'error')
+        await sendSystemMessage(formatCreateFileResult(safePath, result))
       }
     }
 
@@ -1304,15 +1542,16 @@
       card = createFileCard(file.filePath, file.content)
     } else {
       const cmd = cleanCommand(action.payload)
+      console.log('[Agent] EXECUTE cmd после cleanCommand:', JSON.stringify(cmd), '| isLikely:', isLikelyRealCommand(cmd, node.textContent || ''))
       if (!isLikelyRealCommand(cmd, node.textContent || '')) return
       card = createCard(cmd)
     }
     card.dataset.createdAt = String(Date.now())
     const target = node.nodeType === Node.TEXT_NODE ? findInsertionTarget(node) : node
-    insertAfter(target, card)
+    const inserted = insertCardAfter(target, card)
 
     setTimeout(() => {
-      console.log('[Agent] Карточка в DOM:', document.body.contains(card))
+      console.log('[Agent] Карточка в DOM:', document.body.contains(card), '| inserted:', inserted, '| target:', target?.tagName, '| target.isConnected:', target?.isConnected)
     }, 500)
 
     if (node.nodeType === Node.TEXT_NODE) {

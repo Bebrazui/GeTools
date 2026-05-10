@@ -76,6 +76,17 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
+  // F12 открывает/закрывает DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools()
+      } else {
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }
+    }
+  })
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
