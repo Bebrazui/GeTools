@@ -300,7 +300,7 @@
   function isLikelyRealCommand(cmd, sourceText) {
     const value = cleanCommand(cmd)
     if (!value) return false
-    if (/^(команда|command|cmd|ваша команда|your command|реальная_команда|real_command)$/i.test(value)) return false
+    if (/^(команда|command|cmd|ваша команда|your command|...|реальная_команда|real_command)$/i.test(value)) return false
 
     const lowerSource = (sourceText || '').toLowerCase()
     if (lowerSource.includes('пример') || lowerSource.includes('формат') || lowerSource.includes('шаблон')) {
