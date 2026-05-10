@@ -31,8 +31,8 @@
   ].join('\n')
   const SAVED_INFO_KEY = 'gemini_agent_saved_info_prompt:' + hashText(SAVED_INFO_PROMPT)
   
-  // Читаем состояние из localStorage
-  let agentEnabled = localStorage.getItem('gemini_agent_enabled') === 'true'
+  // Агент всегда включён
+  let agentEnabled = true
   let autoRunEnabled = false
   let ultraThinkEnabled = localStorage.getItem('gemini_agent_ultrathink_enabled') === 'true'
   let ultraThinkBypassSend = false
@@ -2203,13 +2203,12 @@
     return send?.parentElement?.parentElement || send?.parentElement || root
   }
 
-  setTimeout(createButton, 1000)
+  // createButton убрана — агент всегда включён
   setTimeout(createAutoRunButton, 1000)
   setTimeout(createUltraThinkButton, 1000)
   setTimeout(createPluginMenuButton, 1000)
   setInterval(createPluginMenuButton, 700)
   controlsTimer = setInterval(() => {
-    createButton()
     createAutoRunButton()
     createUltraThinkButton()
     createPluginMenuButton()

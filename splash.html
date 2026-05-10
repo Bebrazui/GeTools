@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>GeTools</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #131314;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      user-select: none;
+      -webkit-app-region: drag;
+      font-family: 'Google Sans', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    .logo {
+      width: 96px;
+      height: 96px;
+      margin-bottom: 44px;
+      object-fit: contain;
+      animation: fadeUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+
+    .track {
+      width: 220px;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      animation: fadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both;
+    }
+
+    .bar {
+      height: 100%;
+      width: 40%;
+      background: linear-gradient(90deg, #4285f4, #a8c7fa);
+      border-radius: 999px;
+      animation: slide 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(650%); }
+    }
+  </style>
+</head>
+<body>
+  <img class="logo" src="transparent.png" alt="GeTools" draggable="false">
+  <div class="track">
+    <div class="bar"></div>
+  </div>
+</body>
+</html>

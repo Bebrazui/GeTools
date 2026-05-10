@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, screen, nativeImage, session } = require('electron')
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, clipboard, screen, nativeImage, session } = require('electron')
 const { exec, execFile } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -21,23 +21,42 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-features', 'TrustedTypes')
 
 let mainWindow
-
-function loadGemini() {
-  mainWindow.loadURL('https://gemini.google.com')
-}
-
-function loadPluginPage() {
-  mainWindow.loadFile(path.join(__dirname, 'pluginPage.html'))
-}
+let geminiView       // BrowserView с Gemini — грузится в фоне
+let splashShownAt = 0
 
 function decodeCommandOutput(value) {
   if (!value || value.length === 0) return ''
   const buffer = Buffer.isBuffer(value) ? value : Buffer.from(String(value), 'binary')
-
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(buffer)
   } catch (_) {
     return new TextDecoder('ibm866').decode(buffer)
+  }
+}
+
+function getContentBounds() {
+  const [w, h] = mainWindow.getContentSize()
+  return { x: 0, y: 0, width: w, height: h }
+}
+
+function showGeminiView() {
+  if (!geminiView) return
+  geminiView.setBounds(getContentBounds())
+  mainWindow.setTopBrowserView(geminiView)
+  // Подгоняем размер при ресайзе
+  mainWindow.on('resize', () => {
+    if (geminiView) geminiView.setBounds(getContentBounds())
+  })
+}
+
+function loadPluginPage() {
+  // Плагины грузим в основном окне поверх view
+  mainWindow.loadFile(path.join(__dirname, 'pluginPage.html'))
+}
+
+function loadGemini() {
+  if (geminiView) {
+    geminiView.webContents.loadURL('https://gemini.google.com')
   }
 }
 
@@ -47,8 +66,26 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'Gemini Agent',
-    backgroundColor: '#1e1e2e',
+    title: 'GeTools',
+    icon: path.join(__dirname, 'logo.ico'),
+    backgroundColor: '#131314',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: true,
+      backgroundThrottling: false,
+      spellcheck: false,
+    },
+    autoHideMenuBar: true,
+    show: false,
+  })
+
+  // Основное окно показывает сплэш
+  mainWindow.loadFile(path.join(__dirname, 'splash.html'))
+
+  // Создаём BrowserView для Gemini — грузится в фоне невидимым
+  geminiView = new BrowserView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -58,85 +95,72 @@ function createWindow() {
       spellcheck: false,
       v8CacheOptions: 'bypassHeatCheckAndEagerCompile',
     },
-    autoHideMenuBar: true,
-    show: false,
   })
+  mainWindow.addBrowserView(geminiView)
+  geminiView.setBounds({ x: 0, y: 0, width: 0, height: 0 }) // скрыт
+  geminiView.webContents.loadURL('https://gemini.google.com')
 
-  loadGemini()
-
-  if (typeof mainWindow.webContents.setFrameRate === 'function') {
-    mainWindow.webContents.setFrameRate(120)
+  if (typeof geminiView.webContents.setFrameRate === 'function') {
+    geminiView.webContents.setFrameRate(120)
   }
 
-  // Подключаем debugger для CDP
-  // CDP is attached only during injection; keeping it attached slows the page down.
-
-  // Открываем DevTools для отладки
   if (process.env.GEMINI_AGENT_DEVTOOLS === '1') {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    geminiView.webContents.openDevTools({ mode: 'detach' })
   }
 
-  // F12 открывает/закрывает DevTools
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
-      if (mainWindow.webContents.isDevToolsOpened()) {
-        mainWindow.webContents.closeDevTools()
-      } else {
-        mainWindow.webContents.openDevTools({ mode: 'detach' })
-      }
+      const wc = geminiView ? geminiView.webContents : mainWindow.webContents
+      if (wc.isDevToolsOpened()) wc.closeDevTools()
+      else wc.openDevTools({ mode: 'detach' })
     }
   })
 
   mainWindow.once('ready-to-show', () => {
+    splashShownAt = Date.now()
     mainWindow.show()
   })
 
-  // Инжектируем агентский код через CDP (обходит Trusted Types)
+  // Инжектируем агентский код через CDP
   async function injectAgentViaCDP() {
+    const wc = geminiView.webContents
     let attachedHere = false
     try {
-      if (!mainWindow.webContents.debugger.isAttached()) {
-        mainWindow.webContents.debugger.attach('1.3')
+      if (!wc.debugger.isAttached()) {
+        wc.debugger.attach('1.3')
         attachedHere = true
       }
+      await wc.debugger.sendCommand('Runtime.enable')
 
-      // Включаем Runtime domain
-      await mainWindow.webContents.debugger.sendCommand('Runtime.enable')
-      
-      // Выполняем код в контексте страницы
       const script = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8')
       const prompt = fs.readFileSync(path.join(__dirname, 'AGENT_PROMPT.md'), 'utf8')
-      await mainWindow.webContents.debugger.sendCommand('Runtime.evaluate', {
+      await wc.debugger.sendCommand('Runtime.evaluate', {
         expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\n${script}`
       })
-      
+
       console.log('[Agent] Скрипт внедрён через CDP')
+
+      // Показываем Gemini — минимум 1.5с сплэша
+      const elapsed = Date.now() - splashShownAt
+      setTimeout(() => showGeminiView(), Math.max(0, 1500 - elapsed))
     } catch (e) {
       console.error('[Agent] Ошибка CDP:', e.message)
+      showGeminiView()
     } finally {
-      if (attachedHere && mainWindow.webContents.debugger.isAttached()) {
-        mainWindow.webContents.debugger.detach()
+      if (attachedHere && wc.debugger.isAttached()) {
+        wc.debugger.detach()
       }
     }
   }
 
-  // Инжектируем агентский код после каждой навигации
-  mainWindow.webContents.on('did-finish-load', () => {
-    if (!mainWindow.webContents.getURL().startsWith('https://gemini.google.com')) return
+  geminiView.webContents.on('did-finish-load', () => {
+    if (!geminiView.webContents.getURL().startsWith('https://gemini.google.com')) return
     injectAgentViaCDP()
   })
 
-  // Обновляем заголовок
-  mainWindow.webContents.on('page-title-updated', (e, title) => {
-    mainWindow.setTitle(`Gemini Agent — ${title}`)
+  geminiView.webContents.on('page-title-updated', (e, title) => {
+    mainWindow.setTitle(`GeTools — ${title}`)
   })
-}
-
-// ─── Инжекция скрипта в страницу ────────────────────────────────────────────
-
-function injectAgentScript() {
-  const script = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8')
-  mainWindow.webContents.executeJavaScript(script).catch(() => {})
 }
 
 // ─── IPC: обработка запросов от агента ──────────────────────────────────────
@@ -193,7 +217,10 @@ ipcMain.handle('app:openPlugins', async () => {
 })
 
 ipcMain.handle('app:openGemini', async () => {
-  loadGemini()
+  if (geminiView) {
+    geminiView.webContents.loadURL('https://gemini.google.com')
+    showGeminiView()
+  }
   return { success: true }
 })
 
@@ -233,12 +260,13 @@ ipcMain.handle('agent:pasteText', async (event, { text }) => {
   const previous = clipboard.readText()
   clipboard.writeText(text)
 
-  if (typeof event.sender.paste === 'function') {
-    event.sender.paste()
+  const sender = geminiView ? geminiView.webContents : event.sender
+  if (typeof sender.paste === 'function') {
+    sender.paste()
   } else {
-    event.sender.sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: ['control'] })
-    event.sender.sendInputEvent({ type: 'char', keyCode: 'v', modifiers: ['control'] })
-    event.sender.sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: ['control'] })
+    sender.sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: ['control'] })
+    sender.sendInputEvent({ type: 'char', keyCode: 'v', modifiers: ['control'] })
+    sender.sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: ['control'] })
   }
 
   setTimeout(() => {
