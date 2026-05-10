@@ -1,0 +1,12 @@
+{
+  "name": "gemini-agent",
+  "version": "1.0.0",
+  "description": "Gemini as a desktop agent",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "41.5.0"
+  }
+}
