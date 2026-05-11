@@ -43,6 +43,42 @@ function saveSettings(data) {
   } catch (_) {}
 }
 
+function getLanguage() {
+  const settings = loadSettings()
+  const lang = settings.language
+  if (lang === 'ru' || lang === 'en') return lang
+  return null
+}
+
+function setLanguage(lang) {
+  if (lang !== 'ru' && lang !== 'en') return
+  saveSettings({ language: lang })
+}
+
+function localizeAgentPrompt(prompt, lang) {
+  if (lang === 'en') {
+    return prompt
+      .replace('Отвечай на русском языке.', 'Reply in English.')
+      .replace('Отвечай на русском языке,', 'Reply in English,')
+      .replace('На это служебное сообщение ответь только: `Понял`', 'Reply to this system message with only: `Understood`')
+  }
+  return prompt
+}
+
+function setupAcceptLanguageHeader(lang) {
+  const headerValue = lang === 'en'
+    ? 'en-US,en;q=0.9'
+    : 'ru-RU,ru;q=0.9,en;q=0.8'
+
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://gemini.google.com/*'] },
+    (details, callback) => {
+      details.requestHeaders['Accept-Language'] = headerValue
+      callback({ requestHeaders: details.requestHeaders })
+    }
+  )
+}
+
 app.whenReady().then(() => {
   const userData = app.getPath('userData')
   SNAPSHOTS_DIR = path.join(userData, 'snapshots')
@@ -54,6 +90,11 @@ app.whenReady().then(() => {
     currentCwd = settings.cwd
     console.log('[Agent] Восстановлен cwd:', currentCwd)
   }
+
+  // Устанавливаем Accept-Language и создаём окно
+  const lang = getLanguage() || 'ru'
+  setupAcceptLanguageHeader(lang)
+  createWindow()
 })
 
 function decodeCommandOutput(value) {
@@ -82,8 +123,8 @@ function showGeminiView() {
 }
 
 function loadPluginPage() {
-  // Плагины грузим в основном окне поверх view
-  mainWindow.loadFile(path.join(__dirname, 'pluginPage.html'))
+  const lang = getLanguage() || 'ru'
+  mainWindow.loadFile(path.join(__dirname, 'pluginPage.html'), { query: { lang } })
 }
 
 function loadGemini() {
@@ -113,8 +154,13 @@ function createWindow() {
     show: false,
   })
 
-  // Основное окно показывает сплэш
-  mainWindow.loadFile(path.join(__dirname, 'splash.html'))
+  // Основное окно показывает сплэш (с Language Selector если язык не выбран)
+  const _splashLang = getLanguage()
+  if (_splashLang === null) {
+    mainWindow.loadFile(path.join(__dirname, 'splash.html'), { query: { needsLanguageSelection: '1' } })
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'splash.html'))
+  }
 
   // Создаём BrowserView для Gemini — грузится в фоне невидимым
   geminiView = new BrowserView({
@@ -203,8 +249,11 @@ function createWindow() {
         }
       }
 
+      const lang = getLanguage() || 'ru'
+      const localizedPrompt = localizeAgentPrompt(prompt, lang)
+
       await wc.debugger.sendCommand('Runtime.evaluate', {
-        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\n${script}\n${pluginScripts}`
+        expression: `window.__geminiAgentPrompt = ${JSON.stringify(localizedPrompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\nwindow.__geminiAgentLang = ${JSON.stringify(lang)};\n${script}\n${pluginScripts}`
       })
 
       console.log('[Agent] Скрипт внедрён через CDP')
@@ -403,6 +452,16 @@ ipcMain.handle('agent:pickFile', async (event, { mode }) => {
 
 // Управление окном
 ipcMain.handle('window:minimize', () => mainWindow.minimize())
+
+// ─── Язык ────────────────────────────────────────────────────────────────────
+
+ipcMain.handle('settings:getLanguage', () => ({ language: getLanguage() || 'ru' }))
+
+ipcMain.handle('settings:setLanguage', async (event, { lang }) => {
+  if (lang !== 'ru' && lang !== 'en') return { success: false, error: 'Invalid language' }
+  setLanguage(lang)
+  return { success: true }
+})
 
 ipcMain.handle('agent:createSnapshot', async (event, { label }) => {
   try {
@@ -691,8 +750,6 @@ ipcMain.handle('agent:pickCwd', async () => {
 })
 
 // ─── App lifecycle ───────────────────────────────────────────────────────────
-
-app.whenReady().then(createWindow)
 
 app.on('window-all-closed', () => {
   app.quit()

@@ -7,6 +7,130 @@
   }
   window.__geminiAgentInjected = true
 
+  // ─── i18n ────────────────────────────────────────────────────────────────────
+  const LANG = (window.__geminiAgentLang === 'en') ? 'en' : 'ru'
+
+  const TRANSLATIONS = {
+    ru: {
+      // Карточки команд
+      cardTerminalTitle: 'Запрос терминала',
+      cardAllow: 'Разрешить',
+      cardDeny: 'Отклонить',
+      cardTrustPrefix: 'Всегда разрешать этот префикс',
+      cardRunning: 'Выполняется...',
+      cardDone: 'Выполнено',
+      cardError: 'Ошибка',
+      cardFileTitle: 'Запись файла',
+      cardWrite: 'Записать',
+      cardWriting: 'Записывается...',
+      cardFileWritten: 'Файл записан',
+      cardWriteError: 'Ошибка записи',
+      // Блок раздумий
+      thinkingTitle: 'Раздумия',
+      thinkingTitleStreaming: 'Раздумия...',
+      // Панель плагинов
+      pluginPanelTitle: 'Плагины GeTools',
+      pluginConnectByUrl: 'Подключить по ссылке',
+      pluginConnect: 'Подключить',
+      pluginUploadZip: 'Загрузить ZIP архив',
+      pluginDropHint: 'Перетащите файл или нажмите для выбора',
+      pluginInstalledSection: 'Установленные плагины',
+      pluginPromptsSection: 'Системные промпты',
+      pluginPromptsDesc: 'Настроить инструкции из prompts.txt',
+      pluginLoading: 'Загрузка плагинов...',
+      pluginNone: 'Плагины не установлены',
+      pluginLoadError: 'Ошибка загрузки плагинов',
+      pluginMenuLabel: 'Плагины GeTools',
+      pluginApiUnavailable: 'API плагинов недоступен',
+      pluginInstalled: (name) => `Плагин "${name}" установлен`,
+      pluginInstallError: (err) => `Ошибка установки: ${err}`,
+      pluginApiMissing: 'API установки плагинов недоступен',
+      // Снапшоты и рабочая директория
+      rollbackBtn: 'Откатить изменения',
+      rollbackNoSnapshot: 'Нет снапшота',
+      openProjectBtn: 'Открыть проект',
+      // Экран настройки промптов
+      setupTitle: 'Настройка системных промптов...',
+      setupSubtitle: 'Обычно занимает 1 минуту',
+      setupDoneTitle: 'Готово!',
+      setupDoneSubtitle: 'Системные промпты успешно добавлены',
+      // Счётчик строк
+      linesSuffix: ' стр.',
+      // UltraThink заголовки
+      ultraThinkAnalysis: '# Анализ',
+      ultraThinkFinalAnswer: '## Финальный ответ',
+      // SAVED_INFO_PROMPT языковая инструкция
+      savedInfoLangInstruction: 'Reply in Russian unless the user asks otherwise.',
+      // Статус агента
+      agentOn: 'ВКЛ',
+      agentOff: 'ВЫКЛ',
+      agentLabel: 'Агент',
+      // Промпты
+      promptsTitle: 'Системные промпты',
+      promptsDesc: 'Настроить инструкции из prompts.txt',
+      promptsResetConfirm: 'Добавить системные промпты GeTools заново?',
+      promptsResetDetail: 'Промпты будут добавлены в "Персональный контекст" Gemini. Это займёт около 1 минуты.',
+    },
+    en: {
+      cardTerminalTitle: 'Terminal request',
+      cardAllow: 'Allow',
+      cardDeny: 'Deny',
+      cardTrustPrefix: 'Always allow this prefix',
+      cardRunning: 'Running...',
+      cardDone: 'Done',
+      cardError: 'Error',
+      cardFileTitle: 'Write file',
+      cardWrite: 'Write',
+      cardWriting: 'Writing...',
+      cardFileWritten: 'File written',
+      cardWriteError: 'Write error',
+      thinkingTitle: 'Thinking',
+      thinkingTitleStreaming: 'Thinking...',
+      pluginPanelTitle: 'GeTools Plugins',
+      pluginConnectByUrl: 'Connect by URL',
+      pluginConnect: 'Connect',
+      pluginUploadZip: 'Upload ZIP archive',
+      pluginDropHint: 'Drag a file or click to select',
+      pluginInstalledSection: 'Installed plugins',
+      pluginPromptsSection: 'System prompts',
+      pluginPromptsDesc: 'Configure instructions from prompts.txt',
+      pluginLoading: 'Loading plugins...',
+      pluginNone: 'No plugins installed',
+      pluginLoadError: 'Failed to load plugins',
+      pluginMenuLabel: 'GeTools Plugins',
+      pluginApiUnavailable: 'Plugin API unavailable',
+      pluginInstalled: (name) => `Plugin "${name}" installed`,
+      pluginInstallError: (err) => `Install error: ${err}`,
+      pluginApiMissing: 'Plugin install API unavailable',
+      rollbackBtn: 'Roll back changes',
+      rollbackNoSnapshot: 'No snapshot',
+      openProjectBtn: 'Open project',
+      setupTitle: 'Setting up system prompts...',
+      setupSubtitle: 'Usually takes 1 minute',
+      setupDoneTitle: 'Done!',
+      setupDoneSubtitle: 'System prompts added successfully',
+      linesSuffix: ' lines',
+      ultraThinkAnalysis: '# Analysis',
+      ultraThinkFinalAnswer: '## Final answer',
+      savedInfoLangInstruction: 'Reply in English unless the user asks otherwise.',
+      agentOn: 'ON',
+      agentOff: 'OFF',
+      agentLabel: 'Agent',
+      promptsTitle: 'System prompts',
+      promptsDesc: 'Configure instructions from prompts.txt',
+      promptsResetConfirm: 'Re-add GeTools system prompts?',
+      promptsResetDetail: 'Prompts will be added to Gemini\'s "Personal context". This takes about 1 minute.',
+    }
+  }
+
+  function t(key) {
+    const dict = TRANSLATIONS[LANG]
+    if (dict && key in dict) return dict[key]
+    const fallback = TRANSLATIONS['ru']
+    if (fallback && key in fallback) return fallback[key]
+    return key
+  }
+
   const COMMAND_MARKER_REGEX = /\[(EXECUTE|CREATE_FILE)\s*:/gi
   const ULTRATHINK_BLOCK_REGEX = /\[ultrathink:(?:on|off)\][\s\S]*?\[\/ultrathink\]\s*/gi
   const ULTRATHINK_REGEX = /\[\/?ultrathink(?::(?:on|off))?\]\s*/gi
@@ -20,7 +144,7 @@
     'When the marker is absent, ignore this instruction completely and behave like a normal Gemini assistant.',
     '',
     'When active:',
-    '- Reply in Russian unless the user asks otherwise.',
+    `- ${t('savedInfoLangInstruction')}`,
     '- Use local commands only when the user clearly needs an action on this Windows computer.',
     '- Do not use local commands for ordinary questions, explanations, planning, or chat.',
     '- For one terminal command, output exactly one standalone line in this format: [EXECUTE: command]',
@@ -931,7 +1055,9 @@
       return '[ultrathink:off] normal reasoning for this request [/ultrathink]'
     }
 
-    return '[ultrathink:on] Начни ответ с заголовка "# Анализ" и напиши подробный разбор задачи. После раздумий напиши заголовок "## Финальный ответ" и дай ответ пользователю. Используй [EXECUTE:] ТОЛЬКО если пользователь явно просит действие на компьютере — не для обычных вопросов. [/ultrathink]'
+    const analysisHeader = t('ultraThinkAnalysis')
+    const finalHeader = t('ultraThinkFinalAnswer')
+    return `[ultrathink:on] Начни ответ с заголовка "${analysisHeader}" и напиши подробный разбор задачи. После раздумий напиши заголовок "${finalHeader}" и дай ответ пользователю. Используй [EXECUTE:] ТОЛЬКО если пользователь явно просит действие на компьютере — не для обычных вопросов. [/ultrathink]`
   }
 
   function withUltraThinkMarker(value) {
@@ -1069,7 +1195,7 @@
     details.className = 'gemini-agent-think'
 
     const summary = document.createElement('summary')
-    summary.textContent = 'Раздумия'
+    summary.textContent = t('thinkingTitle')
 
     const pre = document.createElement('pre')
     pre.textContent = text.trim()
@@ -1085,7 +1211,7 @@
     details.open = true  // раскрыт пока идёт стриминг
 
     const summary = document.createElement('summary')
-    summary.textContent = 'Раздумия...'
+    summary.textContent = t('thinkingTitleStreaming')
 
     const pre = document.createElement('pre')
     pre.textContent = ''
@@ -1108,7 +1234,7 @@
   function finalizeStreamingThinkBlock() {
     if (!ultraThinkDetailsEl) return
     const summary = ultraThinkDetailsEl.querySelector('summary')
-    if (summary) summary.textContent = 'Раздумия'
+    if (summary) summary.textContent = t('thinkingTitle')
     ultraThinkDetailsEl.open = false
     ultraThinkDetailsEl = null
     ultraThinkPreEl = null
@@ -1276,21 +1402,23 @@
           return true
         })
 
-      // Ищем открывающий маркер "# Анализ"
+      // Ищем открывающий маркер (# Анализ / # Analysis)
+      const analysisText = t('ultraThinkAnalysis').replace(/^#+\s*/, '').trim()
       const openIdx = allEls.findIndex(el =>
-        el.matches('h1, h2, h3, h4') && /^анализ$/i.test((el.textContent || '').trim())
+        el.matches('h1, h2, h3, h4') && new RegExp(`^${analysisText}$`, 'i').test((el.textContent || '').trim())
       )
       if (openIdx === -1) {
-        console.log('[UT] renderThinkBlocks: маркер # Анализ не найден')
+        console.log('[UT] renderThinkBlocks: маркер не найден')
         return
       }
 
       // Маркер найден — сбрасываем флаг
       ultraThinkAwaitingThink = false
 
-      // Ищем закрывающий маркер "## Финальный ответ" после открывающего
+      // Ищем закрывающий маркер (## Финальный ответ / ## Final answer) после открывающего
+      const finalText = t('ultraThinkFinalAnswer').replace(/^#+\s*/, '').trim()
       const closeIdx = allEls.findIndex((el, i) =>
-        i > openIdx && el.matches('h1, h2, h3, h4') && /^финальный\s+ответ$/i.test((el.textContent || '').trim())
+        i > openIdx && el.matches('h1, h2, h3, h4') && new RegExp(`^${finalText}$`, 'i').test((el.textContent || '').trim())
       )
 
       // Элементы раздумий — всё между маркерами (или до конца если закрывающего нет)
@@ -1591,7 +1719,7 @@
     terminalIcon.append(terminalPath, terminalLine)
 
     const headerText = document.createElement('span')
-    headerText.textContent = 'Запрос терминала'
+    headerText.textContent = t('cardTerminalTitle')
     header.append(terminalIcon, headerText)
 
     const codeBox = document.createElement('div')
@@ -1610,19 +1738,19 @@
     trustSwitch.className = 'switch'
 
     const trustText = document.createElement('span')
-    trustText.textContent = 'Всегда разрешать этот префикс'
+    trustText.textContent = t('cardTrustPrefix')
 
     trustLabel.append(trustInput, trustSwitch, trustText)
 
     const btnDeny = document.createElement('button')
     btnDeny.type = 'button'
     btnDeny.className = 'deny'
-    btnDeny.textContent = 'Отклонить'
+    btnDeny.textContent = t('cardDeny')
 
     const btnRun = document.createElement('button')
     btnRun.type = 'button'
     btnRun.className = 'run'
-    btnRun.textContent = 'Разрешить'
+    btnRun.textContent = t('cardAllow')
 
     const resultBox = document.createElement('div')
     resultBox.className = 'result'
@@ -1632,10 +1760,10 @@
     function renderCompleted(result) {
       executed = true
       const success = result.success
-      headerText.textContent = success ? 'Выполнено' : 'Ошибка'
+      headerText.textContent = success ? t('cardDone') : t('cardError')
       terminalIcon.style.color = success ? '#0b57d0' : '#b3261e'
       resultBox.className = 'result ' + (success ? 'success' : 'error')
-      resultBox.textContent = success ? (result.stdout || 'OK') : (result.stderr || result.error || 'Ошибка')
+      resultBox.textContent = success ? (result.stdout || 'OK') : (result.stderr || result.error || t('cardError'))
       card.classList.add('done')
       host.setAttribute('data-gemini-agent-card-state', success ? 'success' : 'error')
     }
@@ -1659,7 +1787,7 @@
       commandStates.set(stateKey, { status: 'running', result: null, updatedAt: Date.now() })
       host.setAttribute('data-gemini-agent-card-state', 'running')
       btnRun.disabled = true
-      btnRun.textContent = 'Выполняется...'
+      btnRun.textContent = t('cardRunning')
 
       try {
         const result = await window.electronAgent.exec(cmd, { cwd: currentCwd || undefined })
@@ -1763,10 +1891,10 @@
     btns.className = 'btns'
     const btnDeny = document.createElement('button')
     btnDeny.className = 'deny'
-    btnDeny.textContent = 'Отклонить'
+    btnDeny.textContent = t('cardDeny')
     const btnRun = document.createElement('button')
     btnRun.className = 'run'
-    btnRun.textContent = 'Выполнить'
+    btnRun.textContent = t('cardAllow')
     const resultBox = document.createElement('div')
     resultBox.className = 'result'
 
@@ -1782,15 +1910,15 @@
       if (executed) return
       executed = true
       btnRun.disabled = true
-      btnRun.textContent = 'Выполняется...'
+      btnRun.textContent = t('cardRunning')
       host.setAttribute('data-gemini-agent-card-state', 'running')
 
       try {
         const result = await reg.handler(payload)
         const success = result?.success !== false
-        headerText.textContent = success ? `${reg.label} — готово` : `${reg.label} — ошибка`
+        headerText.textContent = success ? `${reg.label} — ${t('cardDone').toLowerCase()}` : `${reg.label} — ${t('cardError').toLowerCase()}`
         resultBox.className = 'result ' + (success ? 'success' : 'error')
-        resultBox.textContent = result?.stdout || result?.output || (success ? 'OK' : result?.error || 'Ошибка')
+        resultBox.textContent = result?.stdout || result?.output || (success ? 'OK' : result?.error || t('cardError'))
         card.classList.add('done')
         host.setAttribute('data-gemini-agent-card-state', success ? 'success' : 'error')
 
@@ -1981,7 +2109,7 @@
     fileIcon.append(fp1, fp2)
 
     const headerText = document.createElement('span')
-    headerText.textContent = 'Запись файла'
+    headerText.textContent = t('cardFileTitle')
     header.append(fileIcon, headerText)
 
     // Path row
@@ -2018,12 +2146,12 @@
     const btnDeny = document.createElement('button')
     btnDeny.type = 'button'
     btnDeny.className = 'deny'
-    btnDeny.textContent = 'Отклонить'
+    btnDeny.textContent = t('cardDeny')
 
     const btnRun = document.createElement('button')
     btnRun.type = 'button'
     btnRun.className = 'run'
-    btnRun.textContent = 'Записать'
+    btnRun.textContent = t('cardWrite')
 
     const resultBox = document.createElement('div')
     resultBox.className = 'result'
@@ -2040,21 +2168,21 @@
       if (executed) return
       executed = true
       btnRun.disabled = true
-      btnRun.textContent = 'Записывается...'
+      btnRun.textContent = t('cardWriting')
       host.setAttribute('data-gemini-agent-card-state', 'running')
 
       try {
         const result = await window.electronAgent.writeFile(safePath, preview)
         const success = result.success
-        headerText.textContent = success ? 'Файл записан' : 'Ошибка записи'
+        headerText.textContent = success ? t('cardFileWritten') : t('cardWriteError')
         resultBox.className = 'result ' + (success ? 'success' : 'error')
-        resultBox.textContent = success ? `✓ ${safePath}` : (result.error || 'Ошибка')
+        resultBox.textContent = success ? `✓ ${safePath}` : (result.error || t('cardError'))
         card.classList.add('done')
         host.setAttribute('data-gemini-agent-card-state', success ? 'success' : 'error')
         await sendSystemMessage(formatCreateFileResult(safePath, result))
       } catch (err) {
         const result = { success: false, error: err.message }
-        headerText.textContent = 'Ошибка записи'
+        headerText.textContent = t('cardWriteError')
         resultBox.className = 'result error'
         resultBox.textContent = err.message
         card.classList.add('done')
@@ -2491,7 +2619,7 @@
 
     const titleIcon = matIcon('extension', 'font-size:22px;color:#a8c7fa;')
     const titleText = document.createElement('span')
-    titleText.textContent = 'Плагины GeTools'
+    titleText.textContent = t('pluginPanelTitle')
     titleText.style.cssText = 'font-size:18px;font-weight:500;'
     title.append(titleIcon, titleText)
 
@@ -2516,7 +2644,7 @@
     setImportant(urlLabel, { display: 'flex', 'align-items': 'center', gap: '8px', 'font-size': '14px', color: '#a8c7fa', 'font-weight': '500' })
     urlLabel.append(matIcon('link', 'font-size:18px;color:#a8c7fa;'))
     const urlLabelText = document.createElement('span')
-    urlLabelText.textContent = 'Подключить по ссылке'
+    urlLabelText.textContent = t('pluginConnectByUrl')
     urlLabel.append(urlLabelText)
 
     const urlRow = document.createElement('div')
@@ -2527,7 +2655,7 @@
     urlInput.className = 'getools-input'
     const urlBtn = document.createElement('button')
     urlBtn.className = 'getools-btn-primary'
-    urlBtn.textContent = 'Подключить'
+    urlBtn.textContent = t('pluginConnect')
     urlRow.append(urlInput, urlBtn)
     urlSection.append(urlLabel, urlRow)
 
@@ -2536,8 +2664,8 @@
     uploadZone.className = 'getools-upload-zone'
     uploadZone.append(
       matIcon('folder_zip', 'font-size:36px;color:#a8c7fa;'),
-      Object.assign(document.createElement('p'), { textContent: 'Загрузить ZIP архив', style: { margin: '0', color: '#a8c7fa', fontWeight: '500', fontSize: '14px' } }),
-      Object.assign(document.createElement('p'), { textContent: 'Перетащите файл или нажмите для выбора', style: { margin: '0', color: '#5f6368', fontSize: '12px' } })
+      Object.assign(document.createElement('p'), { textContent: t('pluginUploadZip'), style: { margin: '0', color: '#a8c7fa', fontWeight: '500', fontSize: '14px' } }),
+      Object.assign(document.createElement('p'), { textContent: t('pluginDropHint'), style: { margin: '0', color: '#5f6368', fontSize: '12px' } })
     )
     uploadZone.onclick = () => {
       const inp = document.createElement('input')
@@ -2546,7 +2674,7 @@
         const file = e.target.files[0]
         if (!file) return
         if (!window.electronAgent?.installPluginFromZip) {
-          alert('API установки плагинов недоступен')
+          alert(t('pluginApiMissing'))
           return
         }
         // Читаем ZIP как ArrayBuffer и передаём в main process
@@ -2555,14 +2683,14 @@
         // Передаём как обычный массив (IPC сериализует)
         const result = await window.electronAgent.installPluginFromZip(Array.from(uint8), file.name)
         if (result.success) {
-          alert(`Плагин "${result.plugin?.name || result.plugin?.id}" установлен`)
+          alert(t('pluginInstalled')(result.plugin?.name || result.plugin?.id))
           // Обновляем список
           if (window.electronAgent?.listPlugins) {
             window.electronAgent.listPlugins().then(res => {
               while (pluginList.firstChild) pluginList.removeChild(pluginList.firstChild)
               if (!res.success || !res.plugins.length) {
                 const empty = document.createElement('div')
-                empty.textContent = 'Плагины не установлены'
+                empty.textContent = t('pluginNone')
                 empty.style.cssText = 'font-size:13px;color:#9aa0a6;padding:8px 0;'
                 pluginList.append(empty)
                 return
@@ -2575,7 +2703,7 @@
             overlay.style.setProperty('display', 'none', 'important')
             window.getools._rerunSetup?.()
           }
-        } else {          alert('Ошибка установки: ' + (result.error || 'неизвестная ошибка'))
+        } else {          alert(t('pluginInstallError')(result.error || 'unknown error'))
         }
       }
       inp.click()
@@ -2589,7 +2717,7 @@
     const installedHeader = document.createElement('div')
     setImportant(installedHeader, { display: 'flex', 'align-items': 'center', 'justify-content': 'space-between' })
     const installedTitle = document.createElement('span')
-    installedTitle.textContent = 'Установленные плагины'
+    installedTitle.textContent = t('pluginInstalledSection')
     installedTitle.style.cssText = 'font-size:15px;font-weight:500;'
     installedHeader.append(installedTitle)
 
@@ -2605,10 +2733,10 @@
     const promptsIcon = matIcon('psychology', 'font-size:20px;color:#a8c7fa;')
     const promptsInfo = document.createElement('div')
     const promptsTitle = document.createElement('div')
-    promptsTitle.textContent = 'Системные промпты'
+    promptsTitle.textContent = t('pluginPromptsSection')
     promptsTitle.style.cssText = 'font-size:14px;font-weight:500;'
     const promptsDesc = document.createElement('div')
-    promptsDesc.textContent = 'Настроить инструкции из prompts.txt'
+    promptsDesc.textContent = t('pluginPromptsDesc')
     promptsDesc.style.cssText = 'font-size:12px;color:#9aa0a6;margin-top:2px;'
     promptsInfo.append(promptsTitle, promptsDesc)
     promptsLeft.append(promptsIcon, promptsInfo)
@@ -2616,8 +2744,8 @@
     promptsSection.append(promptsLeft, promptsArrow)
     promptsSection.onclick = async () => {
       const confirmed = await window.electronAgent.confirm(
-        'Добавить системные промпты GeTools заново?',
-        'Промпты будут добавлены в "Персональный контекст" Gemini. Это займёт около 1 минуты.'
+        t('promptsResetConfirm'),
+        t('promptsResetDetail')
       )
       if (!confirmed.allowed) return
 
@@ -2626,7 +2754,7 @@
         .filter(k => k.startsWith('getools_prompts_done:') || k.startsWith('getools_prompts_added_count:'))
         .forEach(k => localStorage.removeItem(k))
       overlay.style.setProperty('display', 'none', 'important')
-      showSetupScreen('Настройка системных промптов...', 'Обычно занимает 1 минуту')
+      showSetupScreen(t('setupTitle'), t('setupSubtitle'))
       setTimeout(() => {
         location.href = 'https://gemini.google.com/saved-info'
       }, 800)
@@ -2681,7 +2809,7 @@
 
     // Загружаем плагины асинхронно
     const loadingMsg = document.createElement('div')
-    loadingMsg.textContent = 'Загрузка плагинов...'
+    loadingMsg.textContent = t('pluginLoading')
     loadingMsg.style.cssText = 'font-size:13px;color:#9aa0a6;padding:8px 0;'
     pluginList.append(loadingMsg)
 
@@ -2690,17 +2818,17 @@
         while (pluginList.firstChild) pluginList.removeChild(pluginList.firstChild)
         if (!res.success || !res.plugins.length) {
           const empty = document.createElement('div')
-          empty.textContent = 'Плагины не установлены'
+          empty.textContent = t('pluginNone')
           empty.style.cssText = 'font-size:13px;color:#9aa0a6;padding:8px 0;'
           pluginList.append(empty)
           return
         }
         res.plugins.forEach(p => pluginList.append(renderPluginCard(p)))
       }).catch(() => {
-        loadingMsg.textContent = 'Ошибка загрузки плагинов'
+        loadingMsg.textContent = t('pluginLoadError')
       })
     } else {
-      loadingMsg.textContent = 'API плагинов недоступен'
+      loadingMsg.textContent = t('pluginApiUnavailable')
     }
 
     body.append(urlSection, uploadZone, divider, promptsSection, installedHeader, pluginList)
@@ -2720,7 +2848,7 @@
     const btn = document.createElement('div')
     btn.id = 'gemini-agent-status'
     btn.className = 'gemini-agent-status' + (agentEnabled ? ' enabled' : '')
-    btn.textContent = (agentEnabled ? '● ' : '○ ') + 'Агент ' + (agentEnabled ? 'ВКЛ' : 'ВЫКЛ')
+    btn.textContent = (agentEnabled ? '● ' : '○ ') + t('agentLabel') + ' ' + (agentEnabled ? t('agentOn') : t('agentOff'))
     setImportant(btn, {
       position: 'fixed',
       bottom: '16px',
@@ -2744,7 +2872,7 @@
       console.log('[Agent] Переключён:', agentEnabled)
       btn.className = 'gemini-agent-status' + (agentEnabled ? ' enabled' : '')
       btn.style.border = agentEnabled ? '1px solid #81c995' : '1px solid #0f3460'
-      btn.textContent = (agentEnabled ? '● ' : '○ ') + 'Агент ' + (agentEnabled ? 'ВКЛ' : 'ВЫКЛ')
+      btn.textContent = (agentEnabled ? '● ' : '○ ') + t('agentLabel') + ' ' + (agentEnabled ? t('agentOn') : t('agentOff'))
       if (agentEnabled) {
         updateAgentObserver()
         scheduleAgentPass(0)
@@ -2874,7 +3002,7 @@
     const btn = document.getElementById('gemini-agent-rollback')
     if (!btn) return
     const lbl = btn.querySelector('.getools-toolbox-label')
-    if (lbl) lbl.textContent = lastSnapshotId ? 'Откатить изменения' : 'Нет снапшота'
+    if (lbl) lbl.textContent = lastSnapshotId ? t('rollbackBtn') : t('rollbackNoSnapshot')
     btn.setAttribute('aria-disabled', lastSnapshotId ? 'false' : 'true')
     btn.style.opacity = lastSnapshotId ? '' : '0.45'
   }
@@ -2885,7 +3013,7 @@
     const btn = createToolboxItem({
       id: 'gemini-agent-rollback',
       icon: 'history',
-      label: lastSnapshotId ? 'Откатить изменения' : 'Нет снапшота',
+      label: lastSnapshotId ? t('rollbackBtn') : t('rollbackNoSnapshot'),
       checked: false,
       onClick: async () => {
         if (!lastSnapshotId) return
@@ -3004,7 +3132,7 @@
   function createCwdButton() {
     if (!window.electronAgent?.pickCwd) return
 
-    const name = currentCwd ? currentCwd.split(/[\\/]/).pop() : 'Открыть проект'
+    const name = currentCwd ? currentCwd.split(/[\\/]/).pop() : t('openProjectBtn')
     const btn = createToolboxItem({
       id: 'gemini-agent-cwd',
       icon: 'folder_open',
@@ -3162,7 +3290,7 @@
     labelWrap.className = 'menu-entry-with-badge'
     const label = document.createElement('span')
     label.className = 'gds-label-l gem-menu-item-label'
-    label.textContent = 'Плагины GeTools'
+    label.textContent = t('pluginMenuLabel')
     labelWrap.append(label)
 
     const ripple = document.createElement('div')
@@ -3526,17 +3654,25 @@
       .filter(k => k.startsWith('gemini_agent_saved_info_prompt:'))
       .forEach(k => localStorage.removeItem(k))
 
-    // Читаем prompts.txt через electronAgent
+    // Читаем prompts.txt через electronAgent (с учётом языка)
     let prompts = []
     if (window.electronAgent?.readFile && window.__geminiAgentAppPath) {
-      try {
-        const result = await window.electronAgent.readFile(window.__geminiAgentAppPath + '\\prompts.txt')
-        if (result?.success && result.content) {
-          prompts = parsePromptsFile(result.content)
-          console.log('[Agent] Загружено промптов:', prompts.length)
+      const appPath = window.__geminiAgentAppPath
+      const candidates = [
+        `${appPath}\\prompts.${LANG}.txt`,
+        `${appPath}\\prompts.txt`,
+      ]
+      for (const filePath of candidates) {
+        try {
+          const result = await window.electronAgent.readFile(filePath)
+          if (result?.success && result.content) {
+            prompts = parsePromptsFile(result.content)
+            console.log(`[Agent] Загружено промптов из ${filePath}:`, prompts.length)
+            break
+          }
+        } catch (e) {
+          console.warn(`[Agent] Не удалось прочитать ${filePath}:`, e)
         }
-      } catch (e) {
-        console.warn('[Agent] Не удалось прочитать prompts.txt:', e)
       }
     }
     if (!prompts.length) prompts = [SAVED_INFO_PROMPT]
@@ -3565,7 +3701,7 @@
 
     // Не на странице saved-info — редиректим
     if (!location.href.startsWith(setupUrl)) {
-      showSetupScreen('Настройка системных промптов...', 'Обычно занимает 1 минуту')
+      showSetupScreen(t('setupTitle'), t('setupSubtitle'))
       setTimeout(() => { location.href = setupUrl }, 400)
       return true
     }
@@ -3581,8 +3717,8 @@
     const promptToAdd = prompts[addedCount]
     console.log(`[Agent] Добавляю промпт ${addedCount + 1}/${prompts.length}`)
     showSetupScreen(
-      `Настройка системных промптов... (${addedCount + 1}/${prompts.length})`,
-      'Обычно занимает 1 минуту'
+      `${t('setupTitle')} (${addedCount + 1}/${prompts.length})`,
+      t('setupSubtitle')
     )
 
     // Ждём появления кнопки "Добавить"
@@ -3633,7 +3769,7 @@
 
           if (addedCount >= prompts.length) {
             localStorage.setItem(doneKey, 'done')
-            showSetupScreen('Готово!', 'Системные промпты успешно добавлены')
+            showSetupScreen(t('setupDoneTitle'), t('setupDoneSubtitle'))
             setTimeout(() => { location.href = 'https://gemini.google.com' }, 1200)
           } else {
             setTimeout(() => { location.reload() }, 800)

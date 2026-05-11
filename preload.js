@@ -24,4 +24,7 @@ contextBridge.exposeInMainWorld('electronAgent', {
   installPlugin: (sourceDir) => ipcRenderer.invoke('agent:installPlugin', { sourceDir }),
   uninstallPlugin: (pluginId) => ipcRenderer.invoke('agent:uninstallPlugin', { pluginId }),
   installPluginFromZip: (bytes, filename) => ipcRenderer.invoke('agent:installPluginFromZip', { bytes, filename }),
+  // Язык
+  getLanguage: () => ipcRenderer.invoke('settings:getLanguage'),
+  setLanguage: (lang) => ipcRenderer.invoke('settings:setLanguage', { lang }),
 })
