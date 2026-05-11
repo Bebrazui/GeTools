@@ -88,7 +88,7 @@ Choose between Russian and English on first launch. The language affects the UI,
 
 ```bash
 # Clone and install
-git clone https://github.com/your-username/getools.git
+git clone https://github.com/bebrazui/getools.git
 cd getools
 npm install
 
