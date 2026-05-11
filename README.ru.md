@@ -88,7 +88,7 @@ window.getools.registerCommand('READ_URL', async (url) => {
 
 ```bash
 # Клонировать и установить зависимости
-git clone https://github.com/your-username/getools.git
+git clone https://github.com/bebrazui/getools.git
 cd getools
 npm install
 
