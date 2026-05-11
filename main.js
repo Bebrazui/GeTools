@@ -25,6 +25,37 @@ let geminiView       // BrowserView с Gemini — грузится в фоне
 let splashShownAt = 0
 let currentCwd = null  // Рабочая директория для команд
 
+// Папка для снапшотов и файл настроек — инициализируются после ready
+let SNAPSHOTS_DIR = null
+let SETTINGS_FILE = null
+
+function loadSettings() {
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) return {}
+    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))
+  } catch (_) { return {} }
+}
+
+function saveSettings(data) {
+  try {
+    const current = loadSettings()
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ ...current, ...data }, null, 2), 'utf8')
+  } catch (_) {}
+}
+
+app.whenReady().then(() => {
+  const userData = app.getPath('userData')
+  SNAPSHOTS_DIR = path.join(userData, 'snapshots')
+  SETTINGS_FILE = path.join(userData, 'settings.json')
+
+  // Восстанавливаем cwd из прошлой сессии
+  const settings = loadSettings()
+  if (settings.cwd && fs.existsSync(settings.cwd)) {
+    currentCwd = settings.cwd
+    console.log('[Agent] Восстановлен cwd:', currentCwd)
+  }
+})
+
 function decodeCommandOutput(value) {
   if (!value || value.length === 0) return ''
   const buffer = Buffer.isBuffer(value) ? value : Buffer.from(String(value), 'binary')
@@ -117,6 +148,14 @@ function createWindow() {
     }
   })
 
+  geminiView.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      const wc = geminiView.webContents
+      if (wc.isDevToolsOpened()) wc.closeDevTools()
+      else wc.openDevTools({ mode: 'detach' })
+    }
+  })
+
   mainWindow.once('ready-to-show', () => {
     splashShownAt = Date.now()
     mainWindow.show()
@@ -139,8 +178,33 @@ function createWindow() {
         try { return 'data:image/png;base64,' + fs.readFileSync(path.join(__dirname, 'transparent.png')).toString('base64') }
         catch (_) { return '' }
       })()
+      // Загружаем активные плагины
+      const pluginsDir = path.join(app.getPath('userData'), 'plugins')
+      let pluginScripts = ''
+      if (fs.existsSync(pluginsDir)) {
+        const settings = loadSettings()
+        const enabledPlugins = settings.enabledPlugins || []
+        for (const pluginId of enabledPlugins) {
+          const pluginDir = path.join(pluginsDir, pluginId)
+          const manifestFile = path.join(pluginDir, 'plugin.json')
+          if (!fs.existsSync(manifestFile)) continue
+          try {
+            const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
+            if (manifest.inject) {
+              const injectFile = path.join(pluginDir, manifest.inject)
+              if (fs.existsSync(injectFile)) {
+                const pluginCode = fs.readFileSync(injectFile, 'utf8')
+                pluginScripts += `\n// ─── Plugin: ${manifest.name} ───\n;(function(){\n${pluginCode}\n})();\n`
+              }
+            }
+          } catch (e) {
+            console.warn(`[Agent] Ошибка загрузки плагина ${pluginId}:`, e.message)
+          }
+        }
+      }
+
       await wc.debugger.sendCommand('Runtime.evaluate', {
-        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\n${script}`
+        expression: `window.__geminiAgentPrompt = ${JSON.stringify(prompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\n${script}\n${pluginScripts}`
       })
 
       console.log('[Agent] Скрипт внедрён через CDP')
@@ -335,13 +399,272 @@ ipcMain.handle('agent:pickFile', async (event, { mode }) => {
   return { canceled: result.canceled, path: result.filePaths[0] || null }
 })
 
+// ─── Снапшоты файлов (чекпоинты) ────────────────────────────────────────────
+
 // Управление окном
 ipcMain.handle('window:minimize', () => mainWindow.minimize())
+
+ipcMain.handle('agent:createSnapshot', async (event, { label }) => {
+  try {
+    const targetDir = currentCwd || __dirname
+    const snapshotId = `snap_${Date.now()}`
+    const snapshotDir = path.join(SNAPSHOTS_DIR, snapshotId)
+    fs.mkdirSync(snapshotDir, { recursive: true })
+
+    // Собираем все файлы в targetDir (не рекурсивно глубже 3 уровней, игнорируем node_modules/.git)
+    const files = []
+    function collectFiles(dir, depth = 0) {
+      if (depth > 3) return
+      let entries
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (_) { return }
+      for (const entry of entries) {
+        if (['node_modules', '.git', '.svn', 'dist', 'build', '__pycache__'].includes(entry.name)) continue
+        const fullPath = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          collectFiles(fullPath, depth + 1)
+        } else if (entry.isFile()) {
+          try {
+            const stat = fs.statSync(fullPath)
+            if (stat.size > 2 * 1024 * 1024) continue // пропускаем файлы > 2MB
+            const content = fs.readFileSync(fullPath, 'utf8')
+            files.push({ path: fullPath, relativePath: path.relative(targetDir, fullPath), content })
+          } catch (_) {}
+        }
+      }
+    }
+    collectFiles(targetDir)
+
+    const meta = {
+      id: snapshotId,
+      label: label || `Снапшот ${new Date().toLocaleString('ru')}`,
+      cwd: targetDir,
+      ts: Date.now(),
+      fileCount: files.length,
+    }
+
+    fs.writeFileSync(path.join(snapshotDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8')
+    fs.writeFileSync(path.join(snapshotDir, 'files.json'), JSON.stringify(files, null, 2), 'utf8')
+
+    console.log(`[Agent] Снапшот создан: ${snapshotId} (${files.length} файлов)`)
+    return { success: true, snapshotId, fileCount: files.length, label: meta.label }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:listSnapshots', async () => {
+  try {
+    if (!fs.existsSync(SNAPSHOTS_DIR)) return { success: true, snapshots: [] }
+    const dirs = fs.readdirSync(SNAPSHOTS_DIR).filter(d => d.startsWith('snap_'))
+    const snapshots = dirs.map(d => {
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(SNAPSHOTS_DIR, d, 'meta.json'), 'utf8'))
+        return meta
+      } catch (_) { return null }
+    }).filter(Boolean).sort((a, b) => b.ts - a.ts)
+    return { success: true, snapshots }
+  } catch (e) {
+    return { success: false, error: e.message, snapshots: [] }
+  }
+})
+
+ipcMain.handle('agent:restoreSnapshot', async (event, { snapshotId }) => {
+  try {
+    const snapshotDir = path.join(SNAPSHOTS_DIR, snapshotId)
+    const files = JSON.parse(fs.readFileSync(path.join(snapshotDir, 'files.json'), 'utf8'))
+    const meta = JSON.parse(fs.readFileSync(path.join(snapshotDir, 'meta.json'), 'utf8'))
+
+    let restored = 0
+    for (const file of files) {
+      try {
+        fs.mkdirSync(path.dirname(file.path), { recursive: true })
+        fs.writeFileSync(file.path, file.content, 'utf8')
+        restored++
+      } catch (_) {}
+    }
+
+    console.log(`[Agent] Откат выполнен: ${restored}/${files.length} файлов восстановлено`)
+    return { success: true, restored, total: files.length, label: meta.label }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:deleteSnapshot', async (event, { snapshotId }) => {
+  try {
+    const snapshotDir = path.join(SNAPSHOTS_DIR, snapshotId)
+    fs.rmSync(snapshotDir, { recursive: true, force: true })
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
 ipcMain.handle('window:maximize', () => {
   if (mainWindow.isMaximized()) mainWindow.unmaximize()
   else mainWindow.maximize()
 })
 ipcMain.handle('window:close', () => mainWindow.close())
+
+// ─── Плагины ─────────────────────────────────────────────────────────────────
+
+const PLUGINS_DIR = path.join(app.getPath('userData'), 'plugins')
+
+ipcMain.handle('agent:listPlugins', async () => {
+  try {
+    if (!fs.existsSync(PLUGINS_DIR)) return { success: true, plugins: [] }
+    const settings = loadSettings()
+    const enabled = new Set(settings.enabledPlugins || [])
+    const dirs = fs.readdirSync(PLUGINS_DIR, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => {
+        try {
+          const manifest = JSON.parse(fs.readFileSync(path.join(PLUGINS_DIR, d.name, 'plugin.json'), 'utf8'))
+          return { ...manifest, id: d.name, enabled: enabled.has(d.name) }
+        } catch (_) { return null }
+      }).filter(Boolean)
+    return { success: true, plugins: dirs }
+  } catch (e) {
+    return { success: false, error: e.message, plugins: [] }
+  }
+})
+
+ipcMain.handle('agent:togglePlugin', async (event, { pluginId, enabled }) => {
+  try {
+    const settings = loadSettings()
+    const list = new Set(settings.enabledPlugins || [])
+    if (enabled) list.add(pluginId)
+    else list.delete(pluginId)
+    saveSettings({ enabledPlugins: [...list] })
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:installPlugin', async (event, { sourceDir }) => {
+  try {
+    const manifestFile = path.join(sourceDir, 'plugin.json')
+    if (!fs.existsSync(manifestFile)) return { success: false, error: 'plugin.json не найден' }
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
+    if (!manifest.id) return { success: false, error: 'Поле id обязательно в plugin.json' }
+
+    const destDir = path.join(PLUGINS_DIR, manifest.id)
+    fs.mkdirSync(destDir, { recursive: true })
+
+    // Копируем все файлы плагина
+    const entries = fs.readdirSync(sourceDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        fs.copyFileSync(path.join(sourceDir, entry.name), path.join(destDir, entry.name))
+      }
+    }
+
+    // Автоматически включаем
+    const settings = loadSettings()
+    const list = new Set(settings.enabledPlugins || [])
+    list.add(manifest.id)
+    saveSettings({ enabledPlugins: [...list] })
+
+    return { success: true, plugin: { ...manifest, id: manifest.id, enabled: true } }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:uninstallPlugin', async (event, { pluginId }) => {
+  try {
+    const pluginDir = path.join(PLUGINS_DIR, pluginId)
+    if (fs.existsSync(pluginDir)) fs.rmSync(pluginDir, { recursive: true, force: true })
+    const settings = loadSettings()
+    const list = new Set(settings.enabledPlugins || [])
+    list.delete(pluginId)
+    saveSettings({ enabledPlugins: [...list] })
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:installPluginFromZip', async (event, { bytes, filename }) => {
+  const zlib = require('zlib')
+
+  // Встроенный минимальный ZIP-парсер (без внешних зависимостей)
+  function parseZip(buf) {
+    const entries = []
+    let i = 0
+    while (i < buf.length - 4) {
+      // Local file header signature: PK\x03\x04
+      if (buf[i] !== 0x50 || buf[i+1] !== 0x4B || buf[i+2] !== 0x03 || buf[i+3] !== 0x04) {
+        i++
+        continue
+      }
+      const compression = buf.readUInt16LE(i + 8)
+      const compressedSize = buf.readUInt32LE(i + 18)
+      const uncompressedSize = buf.readUInt32LE(i + 22)
+      const fileNameLen = buf.readUInt16LE(i + 26)
+      const extraLen = buf.readUInt16LE(i + 28)
+      const fileName = buf.slice(i + 30, i + 30 + fileNameLen).toString('utf8')
+      const dataStart = i + 30 + fileNameLen + extraLen
+      const compressedData = buf.slice(dataStart, dataStart + compressedSize)
+
+      if (!fileName.endsWith('/')) {
+        let data
+        if (compression === 0) {
+          data = compressedData
+        } else if (compression === 8) {
+          try { data = zlib.inflateRawSync(compressedData) } catch (_) { data = compressedData }
+        } else {
+          data = compressedData
+        }
+        entries.push({ name: fileName, data })
+      }
+      i = dataStart + compressedSize
+    }
+    return entries
+  }
+
+  try {
+    const buf = Buffer.from(bytes)
+    const entries = parseZip(buf)
+
+    if (!entries.length) return { success: false, error: 'ZIP пустой или повреждён' }
+
+    // Ищем plugin.json (может быть в корне или в подпапке)
+    const manifestEntry = entries.find(e => e.name === 'plugin.json' || e.name.endsWith('/plugin.json'))
+    if (!manifestEntry) return { success: false, error: 'plugin.json не найден в ZIP' }
+
+    const manifest = JSON.parse(manifestEntry.data.toString('utf8'))
+    if (!manifest.id) return { success: false, error: 'Поле id обязательно в plugin.json' }
+
+    // Определяем базовый путь внутри ZIP (папка где лежит plugin.json)
+    const manifestDir = manifestEntry.name.includes('/')
+      ? manifestEntry.name.slice(0, manifestEntry.name.lastIndexOf('/') + 1)
+      : ''
+
+    const destDir = path.join(PLUGINS_DIR, manifest.id)
+    fs.mkdirSync(destDir, { recursive: true })
+
+    // Записываем все файлы из той же папки что и plugin.json
+    for (const entry of entries) {
+      if (!entry.name.startsWith(manifestDir)) continue
+      const relName = entry.name.slice(manifestDir.length)
+      if (!relName || relName.includes('/')) continue // только файлы из корня плагина
+      const destFile = path.join(destDir, relName)
+      fs.writeFileSync(destFile, entry.data)
+    }
+
+    // Автоматически включаем
+    const settings = loadSettings()
+    const list = new Set(settings.enabledPlugins || [])
+    list.add(manifest.id)
+    saveSettings({ enabledPlugins: [...list] })
+
+    console.log(`[Agent] Плагин установлен из ZIP: ${manifest.id}`)
+    return { success: true, plugin: { ...manifest, id: manifest.id, enabled: true } }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
 
 // ─── Рабочая директория ──────────────────────────────────────────────────────
 
@@ -350,6 +673,7 @@ ipcMain.handle('agent:getCwd', () => ({ cwd: currentCwd }))
 ipcMain.handle('agent:setCwd', async (event, { cwd: newCwd }) => {
   if (newCwd && fs.existsSync(newCwd)) {
     currentCwd = newCwd
+    saveSettings({ cwd: currentCwd })
     return { success: true, cwd: currentCwd }
   }
   return { success: false, error: 'Папка не существует' }
@@ -362,6 +686,7 @@ ipcMain.handle('agent:pickCwd', async () => {
   })
   if (result.canceled || !result.filePaths[0]) return { canceled: true, cwd: currentCwd }
   currentCwd = result.filePaths[0]
+  saveSettings({ cwd: currentCwd })
   return { canceled: false, cwd: currentCwd }
 })
 

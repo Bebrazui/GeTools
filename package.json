@@ -2,14 +2,35 @@
   "name": "gemini-agent",
   "version": "1.0.0",
   "description": "Gemini as a desktop agent",
+  "author": "Bebrazui",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --win"
   },
-  "dependencies": {
-    "electron": "41.5.0"
+  "build": {
+    "appId": "com.getools.app",
+    "productName": "GeTools",
+    "win": {
+      "target": "nsis",
+      "icon": "logo.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "inject.js",
+      "splash.html",
+      "pluginPage.html",
+      "AGENT_PROMPT.md",
+      "logo.ico",
+      "logo.png",
+      "transparent.png"
+    ]
   },
+  "dependencies": {},
   "devDependencies": {
+    "electron": "41.5.0",
+    "electron-builder": "^26.8.1",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5"
   }

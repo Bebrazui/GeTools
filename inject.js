@@ -37,6 +37,10 @@
   let ultraThinkEnabled = localStorage.getItem('gemini_agent_ultrathink_enabled') === 'true'
   let ultraThinkBypassSend = false
   let ultraThinkAwaitingThink = false
+  let ultraThinkStreamingActive = false  // идёт стриминг внутри <think>
+  let ultraThinkDetailsEl = null         // текущий <details> блок раздумий
+  let ultraThinkPreEl = null             // <pre> внутри него куда пишем текст
+  let ultraThinkRenderBusy = false       // guard против рекурсивных вызовов renderThinkBlocks
   let agentPromptSending = false
   let agentPassTimer = null
   let lastAgentPassAt = 0
@@ -58,6 +62,320 @@
       hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0
     }
     return String(hash >>> 0)
+  }
+
+  // ─── window.getools — публичный API для плагинов ─────────────────────────
+
+  const pluginCommandRegistry = new Map() // name -> { handler, label, icon }
+
+  // ─── UltraThink fetch-перехват ────────────────────────────────────────────
+  // Патчим window.fetch чтобы читать стриминговый ответ Gemini до рендера DOM.
+  // Когда ultraThinkEnabled: накапливаем текст, детектируем маркеры # Анализ / ## Финальный ответ,
+  // рендерим <details> сами — Gemini рендерит в скрытый элемент параллельно.
+
+  let utFetchAccum = ''          // накопленный ТЕКСТ ответа (уже извлечённый)
+  let utFetchRawAccum = ''       // накопленный сырой XHR для отладки
+  let utFetchPhase = 'idle'      // idle | think | answer
+  let utFetchDetailsEl = null    // наш <details> блок
+  let utFetchPreEl = null        // <pre> внутри него
+  let utFetchHiddenEl = null     // скрытый model-response Gemini
+  let utFetchDone = false        // стрим завершён
+
+  function utFindCurrentModelResponse() {
+    // Сначала используем элемент отслеженный MutationObserver во время стриминга
+    if (utCurrentStreamingEl && document.body.contains(utCurrentStreamingEl)) {
+      return utCurrentStreamingEl
+    }
+    // Fallback: последний model-response в DOM
+    const candidates = [
+      ...document.querySelectorAll('model-response, message-content, .model-response-text, ms-chat-turn')
+    ].filter(el => !el.closest('user-query, [class*="user-query"], .query-content'))
+    return candidates[candidates.length - 1] || null
+  }
+
+  function utCreateDetailsBlock(anchor) {
+    const details = document.createElement('details')
+    details.className = 'gemini-agent-think'
+    details.open = true
+
+    const summary = document.createElement('summary')
+    summary.textContent = 'Раздумия...'
+
+    const pre = document.createElement('pre')
+    pre.textContent = ''
+    pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;'
+
+    details.append(summary, pre)
+
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(details, anchor)
+    } else {
+      document.body.appendChild(details)
+    }
+
+    return { details, pre }
+  }
+
+  function utFinalizeDetails() {
+    if (!utFetchDetailsEl) return
+    const summary = utFetchDetailsEl.querySelector('summary')
+    if (summary) summary.textContent = 'Раздумия'
+    utFetchDetailsEl.open = false
+    utFetchDetailsEl = null
+    utFetchPreEl = null
+  }
+
+  function utShowHiddenEl() {
+    if (!utFetchHiddenEl) return
+    utFetchHiddenEl.style.removeProperty('visibility')
+    utFetchHiddenEl.style.removeProperty('height')
+    utFetchHiddenEl.style.removeProperty('overflow')
+    utFetchHiddenEl.style.removeProperty('pointer-events')
+    utFetchHiddenEl = null
+  }
+
+  function utReset() {
+    utFetchAccum = ''
+    utFetchRawAccum = ''
+    utFetchPhase = 'idle'
+    utFinalizeDetails()
+    utShowHiddenEl()
+    utFetchDone = false
+  }
+
+  // Парсим накопленный текст из JSON-чанков Gemini (формат StreamGenerate)
+  // Формат chunked transfer: "1537\r\n[["wrb.fr", null, "<JSON-строка>"]]\r\n"
+  // Внутри JSON-строки: [null, [...], null, null, [["rc_id", ["текст чанка"], ...]]]
+  function utExtractText(raw) {
+    let result = ''
+    try {
+      // Убираем XSSI-префикс )]}'\n
+      let cleaned = raw.replace(/^\s*\)\]\}'\s*/, '')
+
+      // Убираем chunked transfer encoding числа (hex или decimal в начале строк)
+      // Формат: "177\r\n<данные>\r\n" или просто числа на отдельных строках
+      cleaned = cleaned.replace(/^[0-9a-f]+\r?\n/gim, '')
+
+      // Ищем все вхождения wrb.fr с вложенной JSON-строкой
+      const wrbRegex = /\["wrb\.fr",[^,]*,"((?:[^"\\]|\\.)*)"/g
+      let m
+      while ((m = wrbRegex.exec(cleaned)) !== null) {
+        try {
+          // Распарсиваем вложенную JSON-строку (двойной JSON.parse)
+          const inner = JSON.parse('"' + m[1] + '"')
+          const innerParsed = JSON.parse(inner)
+          // Структура: [null, [...], null, null, [["rc_id", ["текст"], ...]]]
+          const chunks = innerParsed?.[4]
+          if (Array.isArray(chunks)) {
+            for (const chunk of chunks) {
+              const textArr = chunk?.[1]
+              if (Array.isArray(textArr)) {
+                result += textArr.join('')
+              } else if (typeof textArr === 'string') {
+                result += textArr
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return result
+  }
+
+  // Рекурсивно извлекает строки из вложенных массивов/объектов Gemini
+  function utDeepExtractStrings(val, depth = 0) {
+    if (depth > 8) return ''
+    if (typeof val === 'string') {
+      if (val.length < 3) return ''
+      if (/^(wrb\.fr|BardChatUi|di\.|af\.|cfb2|_reqid|noop|generic)/i.test(val)) return ''
+      if (/^[0-9a-f]{8,}$/i.test(val)) return ''
+      return val
+    }
+    if (Array.isArray(val)) {
+      return val.map(v => utDeepExtractStrings(v, depth + 1)).join('')
+    }
+    return ''
+  }
+
+  // Принимает сырой XHR-чанк, извлекает текст и передаёт в utProcessChunk
+  function utProcessRawChunk(raw) {
+    if (!ultraThinkEnabled || !ultraThinkAwaitingThink) return
+    const text = utExtractText(raw)
+    if (text) {
+      console.log('[UT] extracted:', JSON.stringify(text.slice(0, 100)))
+      utProcessChunk(text)
+    }
+  }
+
+  function utProcessChunk(text) {
+    if (!ultraThinkEnabled || !ultraThinkAwaitingThink) return
+
+    utFetchAccum += text
+    console.log('[UT] chunk, phase:', utFetchPhase, 'accum len:', utFetchAccum.length)
+    // Ищем открывающий маркер
+    if (utFetchPhase === 'idle') {
+      const openMatch = utFetchAccum.match(/#+\s*Анализ\b/i)
+      if (!openMatch) return
+
+      utFetchPhase = 'think'
+      utFetchAccum = utFetchAccum.slice(openMatch.index + openMatch[0].length)
+
+      // Скрываем текущий model-response Gemini
+      const modelEl = utFindCurrentModelResponse()
+      if (modelEl) {
+        utFetchHiddenEl = modelEl
+        modelEl.style.setProperty('visibility', 'hidden', 'important')
+        modelEl.style.setProperty('height', '0', 'important')
+        modelEl.style.setProperty('overflow', 'hidden', 'important')
+        modelEl.style.setProperty('pointer-events', 'none', 'important')
+      }
+
+      // Создаём наш <details> блок
+      const anchor = modelEl || null
+      const { details, pre } = utCreateDetailsBlock(anchor)
+      utFetchDetailsEl = details
+      utFetchPreEl = pre
+    }
+
+    // Ищем закрывающий маркер
+    if (utFetchPhase === 'think') {
+      const closeMatch = utFetchAccum.match(/#+\s*Финальный\s+ответ\b/i)
+      if (closeMatch) {
+        // Всё до маркера — раздумия
+        const thinkPart = utFetchAccum.slice(0, closeMatch.index).trim()
+        if (utFetchPreEl) utFetchPreEl.textContent = thinkPart
+
+        utFetchPhase = 'answer'
+        utFetchAccum = utFetchAccum.slice(closeMatch.index + closeMatch[0].length)
+
+        utFinalizeDetails()
+        utShowHiddenEl()
+        return
+      }
+
+      // Обновляем текст раздумий
+      if (utFetchPreEl) {
+        utFetchPreEl.textContent = utFetchAccum.trim()
+      }
+    }
+  }
+
+  // Патчим fetch
+  const _originalFetch = window.fetch
+  window.fetch = async function(...args) {
+    const response = await _originalFetch.apply(this, args)
+
+    // Перехватываем только стриминговые запросы к Gemini API
+    const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '')
+    const isGeminiStream = /\/_\/BardChatUi\/data\/|\/generate|StreamGenerate|batchexecute/i.test(url)
+
+    if (!isGeminiStream || !ultraThinkEnabled || !ultraThinkAwaitingThink || !response.body) {
+      return response
+    }
+
+    // Клонируем стрим: один для Gemini, один для нас
+    const [forGemini, forUs] = response.body.tee()
+
+    // Читаем наш клон асинхронно
+    ;(async () => {
+      const reader = forUs.getReader()
+      const decoder = new TextDecoder()
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            utFetchDone = true
+            // Если фаза think и не нашли закрывающий маркер — финализируем как есть
+            if (utFetchPhase === 'think') {
+              utFinalizeDetails()
+              utShowHiddenEl()
+              utFetchPhase = 'idle'
+            }
+            break
+          }
+          const raw = decoder.decode(value, { stream: true })
+          const text = utExtractText(raw)
+          if (text) utProcessChunk(text)
+        }
+      } catch (_) {
+        // При ошибке показываем оригинальный элемент
+        utShowHiddenEl()
+        utFinalizeDetails()
+      } finally {
+        reader.releaseLock()
+      }
+    })()
+
+    return new Response(forGemini, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  }
+
+  // XHR-перехват — Gemini использует batchexecute через XHR, не fetch
+  const _OrigXHR = window.XMLHttpRequest
+  function PatchedXHR() {
+    const xhr = new _OrigXHR()
+    const _open = xhr.open.bind(xhr)
+    const _send = xhr.send.bind(xhr)
+    let _url = ''
+    let _isGeminiStream = false
+
+    xhr.open = function(method, url, ...rest) {
+      _url = url || ''
+      _isGeminiStream = /batchexecute|StreamGenerate|generate/i.test(_url)
+      return _open(method, url, ...rest)
+    }
+
+    xhr.send = function(body) {
+      if (_isGeminiStream && ultraThinkEnabled && ultraThinkAwaitingThink) {
+        let _lastLen = 0
+        const _origOnReadyStateChange = xhr.onreadystatechange
+
+        const processNewData = () => {
+          if (!xhr.responseText) return
+          const newRaw = xhr.responseText.slice(_lastLen)
+          _lastLen = xhr.responseText.length
+          if (!newRaw) return
+          // Передаём сырой чанк напрямую — utProcessRawChunk сам извлечёт текст
+          utProcessRawChunk(newRaw)
+        }
+
+        xhr.onreadystatechange = function(...args) {
+          if (xhr.readyState >= 3) processNewData()
+          if (_origOnReadyStateChange) _origOnReadyStateChange.apply(xhr, args)
+        }
+
+        xhr.addEventListener('progress', processNewData)
+      }
+      return _send(body)
+    }
+
+    return xhr
+  }
+  PatchedXHR.prototype = _OrigXHR.prototype
+  window.XMLHttpRequest = PatchedXHR
+
+  window.getools = {
+    // Плагин регистрирует новую команду
+    registerCommand(name, handler, options = {}) {
+      const key = String(name).toUpperCase()
+      pluginCommandRegistry.set(key, {
+        handler,
+        label: options.label || name,
+        icon: options.icon || 'extension',
+        description: options.description || '',
+      })
+      console.log(`[GeTools] Команда зарегистрирована: ${key}`)
+    },
+
+    // Утилиты для плагинов
+    sendSystemMessage: (msg) => sendSystemMessage(msg),
+    formatResult: (cmd, result) => formatSystemResult(cmd, result),
+    createCard: (cmd) => createCard(cmd),
+    get cwd() { return currentCwd },
+    get electronAgent() { return window.electronAgent },
   }
 
   // ─── Инъекция CSS стилей ──────────────────────────────────────────────────
@@ -318,19 +636,26 @@
   function parseAgentActions(text) {
     const value = String(text || '')
     const actions = []
-    let match
 
-    COMMAND_MARKER_REGEX.lastIndex = 0
-    while ((match = COMMAND_MARKER_REGEX.exec(value)) !== null) {
+    // Строим динамический regex: встроенные + зарегистрированные плагинами команды
+    const pluginNames = [...pluginCommandRegistry.keys()]
+    const allCommands = ['EXECUTE', 'CREATE_FILE', ...pluginNames]
+    const dynamicRegex = new RegExp(
+      `\\[(${allCommands.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\s*:`,
+      'gi'
+    )
+
+    let match
+    while ((match = dynamicRegex.exec(value)) !== null) {
       const type = match[1].toUpperCase()
-      const payloadStart = COMMAND_MARKER_REGEX.lastIndex
+      const payloadStart = dynamicRegex.lastIndex
       const end = findCommandMarkerEnd(value, payloadStart)
       if (end === -1) continue
 
       const payload = value.slice(payloadStart, end).trim()
       const fullMatch = value.slice(match.index, end + 1)
       actions.push({ type, payload, fullMatch })
-      COMMAND_MARKER_REGEX.lastIndex = end + 1
+      dynamicRegex.lastIndex = end + 1
     }
 
     return actions
@@ -606,7 +931,7 @@
       return '[ultrathink:off] normal reasoning for this request [/ultrathink]'
     }
 
-    return '[ultrathink:on] start response with literal <think>...</think> or at least a detailed planning paragraph before any answer/EXECUTE; never jump straight to EXECUTE [/ultrathink]'
+    return '[ultrathink:on] Начни ответ с заголовка "# Анализ" и напиши подробный разбор задачи. После раздумий напиши заголовок "## Финальный ответ" и дай ответ пользователю. Используй [EXECUTE:] ТОЛЬКО если пользователь явно просит действие на компьютере — не для обычных вопросов. [/ultrathink]'
   }
 
   function withUltraThinkMarker(value) {
@@ -692,14 +1017,49 @@
     }
   }
 
+  // Скрывает ultrathink-блок из отображаемых сообщений пользователя.
+  // Gemini рендерит сообщение пользователя как набор параграфов — ищем параграфы
+  // содержащие [ultrathink:on] или [/ultrathink] и скрываем их.
+  function hideUltraThinkFromUserMessages() {
+    const userMessages = document.querySelectorAll(
+      'user-query, [class*="user-query"], .user-query-bubble-with-background, .query-content'
+    )
+    userMessages.forEach(msg => {
+      if (msg.dataset.getoolsUltraHidden) return
+      const fullText = msg.textContent || ''
+      if (!/\[ultrathink:/i.test(fullText)) return
+
+      // Скрываем отдельные параграфы/строки содержащие маркеры
+      const paras = msg.querySelectorAll('p, li, pre, code, .query-text-line, span, div')
+      let inUltraBlock = false
+      paras.forEach(p => {
+        const t = p.textContent || ''
+        if (/\[ultrathink:on\]/i.test(t)) {
+          inUltraBlock = true
+          hideElement(p)
+          return
+        }
+        if (/\[\/ultrathink\]/i.test(t)) {
+          inUltraBlock = false
+          hideElement(p)
+          return
+        }
+        if (inUltraBlock) hideElement(p)
+      })
+      msg.dataset.getoolsUltraHidden = '1'
+    })
+  }
+
   function hideUltraThinkMarkersBurst(duration = 5000) {
     const startedAt = Date.now()
     hideGeToolsMarkers()
     hideUltraThinkMarkers()
+    hideUltraThinkFromUserMessages()
 
     const timer = setInterval(() => {
       hideGeToolsMarkers()
       hideUltraThinkMarkers()
+      hideUltraThinkFromUserMessages()
       if (Date.now() - startedAt >= duration) clearInterval(timer)
     }, 150)
   }
@@ -718,6 +1078,44 @@
     return details
   }
 
+  // Создаёт пустой стриминговый блок раздумий и возвращает { details, pre }
+  function createStreamingThinkBlock(anchorEl) {
+    const details = document.createElement('details')
+    details.className = 'gemini-agent-think'
+    details.open = true  // раскрыт пока идёт стриминг
+
+    const summary = document.createElement('summary')
+    summary.textContent = 'Раздумия...'
+
+    const pre = document.createElement('pre')
+    pre.textContent = ''
+
+    details.append(summary, pre)
+
+    if (anchorEl && anchorEl.parentNode) {
+      anchorEl.parentNode.insertBefore(details, anchorEl)
+    } else {
+      // Вставляем в последний контейнер ответа
+      const containers = document.querySelectorAll('model-response, message-content, .model-response-text')
+      const last = containers[containers.length - 1]
+      if (last) last.prepend(details)
+      else document.body.appendChild(details)
+    }
+
+    return { details, pre }
+  }
+
+  function finalizeStreamingThinkBlock() {
+    if (!ultraThinkDetailsEl) return
+    const summary = ultraThinkDetailsEl.querySelector('summary')
+    if (summary) summary.textContent = 'Раздумия'
+    ultraThinkDetailsEl.open = false
+    ultraThinkDetailsEl = null
+    ultraThinkPreEl = null
+    ultraThinkStreamingActive = false
+    ultraThinkAwaitingThink = false
+  }
+
   function isThinkCandidateElement(el) {
     return !!el
       && el.nodeType === Node.ELEMENT_NODE
@@ -733,7 +1131,7 @@
     const collected = []
     let node = executeEl.previousSibling
 
-    while (node && collected.length < 8) {
+    while (node && collected.length < 50) {
       const previous = node.previousSibling
       const text = node.textContent?.trim() || ''
 
@@ -783,7 +1181,7 @@
     const collected = [el]
     let node = el.nextSibling
 
-    while (node && collected.length < 8) {
+    while (node && collected.length < 200) {
       const text = node.textContent?.trim() || ''
       if (!text) {
         node = node.nextSibling
@@ -794,13 +1192,6 @@
       if (/\[EXECUTE:\s*[^\]\r\n]+\]/i.test(text)) break
       if (/^\[SYSTEM\]/.test(text) || /\[ultrathink:(?:on|off)\]/i.test(text)) break
       if (node.nodeType === Node.ELEMENT_NODE && !isThinkCandidateElement(node)) break
-
-      const previousLooksLikeContinuation = collected.length > 0 && (
-        /^[\d\-*•]/.test(text)
-        || /^(?:Затем|После этого|Далее|Исходя|Команда|Это|Такой|Если|Когда|Finally|Then|Next)\b/i.test(text)
-        || text.length < 220
-      )
-      if (!previousLooksLikeContinuation && !looksLikeReasoningText(text)) break
 
       collected.push(node)
       node = node.nextSibling
@@ -826,70 +1217,121 @@
     return true
   }
 
-  function renderThinkBlocks() {
-    ;[...document.querySelectorAll('think')].forEach(el => {
-      if (processedThinkElements.has(el)) return
-      if (el.closest('[contenteditable="true"], textarea, input, .gemini-agent-host, .gemini-agent-think')) return
+  // Собирает весь текст ответа модели в один блок раздумий
+  // Используется когда ultraThinkAwaitingThink=true и ответ завершён без <think>
+  function collectWholeResponseAsThink(responseContainer) {
+    if (!responseContainer) return false
 
+    const candidates = [...responseContainer.querySelectorAll('p, li, pre, code, .query-text-line')]
+      .filter(el => {
+        if (processedThinkElements.has(el)) return false
+        if (el.closest('[contenteditable="true"], textarea, input, .gemini-agent-host, .gemini-agent-think')) return false
+        if (el.hasAttribute('data-gemini-agent-hidden-system')) return false
+        const text = el.textContent?.trim() || ''
+        if (!text) return false
+        if (/^\[SYSTEM\]/.test(text) || /\[ultrathink:(?:on|off)\]/i.test(text)) return false
+        if (/\[EXECUTE:\s*[^\]\r\n]+\]/i.test(text)) return false
+        return true
+      })
+
+    if (!candidates.length) return false
+
+    const reasoning = candidates
+      .map(el => el.textContent?.trim())
+      .filter(Boolean)
+      .join('\n\n')
+
+    if (!reasoning || reasoning.length < 20) return false
+
+    // Вставляем блок раздумий перед первым элементом
+    const first = candidates[0]
+    if (first.parentNode) {
+      first.parentNode.insertBefore(createThinkDetails(reasoning), first)
+    }
+    candidates.forEach(el => {
       processedThinkElements.add(el)
-      ultraThinkAwaitingThink = false
-      const details = createThinkDetails(el.textContent || '')
-      if (el.parentNode) el.parentNode.insertBefore(details, el)
       hideElement(el)
     })
+    ultraThinkAwaitingThink = false
+    return true
+  }
 
-    const candidates = [...document.querySelectorAll([
-      '.query-text-line',
-      'p',
-      'li',
-      'pre',
-      'code',
-    ].join(', '))]
+  function renderThinkBlocks() {
+    if (!ultraThinkAwaitingThink) return
 
-    candidates.forEach(el => {
-      if (processedThinkElements.has(el)) return
-      if (el.closest('[contenteditable="true"], textarea, input, .gemini-agent-host, .gemini-agent-think')) return
+    // Не трогаем DOM пока Gemini ещё генерирует — он перерисовывает всё при каждом токене
+    if (isGenerating()) return
 
-      const text = el.textContent || ''
-      const match = text.match(/<think>([\s\S]*?)<\/think>/i)
-      if (!match) {
-        const executeMatch = text.match(/\[EXECUTE:\s*[^\]\r\n]+\]/i)
-        if (ultraThinkAwaitingThink && executeMatch && collectSiblingReasoningBeforeExecute(el)) return
-        if (ultraThinkAwaitingThink && collectInlineReasoningFrom(el)) return
-        if (ultraThinkAwaitingThink && executeMatch && executeMatch.index > 0) {
-          const before = text.slice(0, executeMatch.index).trim()
-          const after = text.slice(executeMatch.index).trim()
-          if (before) {
-            processedThinkElements.add(el)
-            if (el.parentNode) el.parentNode.insertBefore(createThinkDetails(before), el)
-            el.textContent = after
-            ultraThinkAwaitingThink = false
-            return
-          }
-        }
+    if (ultraThinkRenderBusy) return
+    ultraThinkRenderBusy = true
 
-        if (
-          ultraThinkAwaitingThink
-          && /^\s*(?:План действий|Анализ|Раздумия|Ход мыслей)\s*:/i.test(text)
-          && !/\[EXECUTE:\s*[^\]\r\n]+\]/i.test(text)
-        ) {
-          processedThinkElements.add(el)
-          if (el.parentNode) el.parentNode.insertBefore(createThinkDetails(text), el)
-          hideElement(el)
-        }
+    try {
+      // Собираем все заголовки и параграфы, исключая сообщения пользователя
+      const allEls = [...document.querySelectorAll('h1, h2, h3, h4, p, li, pre, code, .query-text-line')]
+        .filter(el => {
+          if (el.closest('[contenteditable="true"], textarea, input, .gemini-agent-host, .gemini-agent-think')) return false
+          if (el.hasAttribute('data-gemini-agent-hidden-system')) return false
+          if (processedThinkElements.has(el)) return false
+          if (el.closest('user-query, [class*="user-query"], .user-query-bubble-with-background, .query-content')) return false
+          return true
+        })
+
+      // Ищем открывающий маркер "# Анализ"
+      const openIdx = allEls.findIndex(el =>
+        el.matches('h1, h2, h3, h4') && /^анализ$/i.test((el.textContent || '').trim())
+      )
+      if (openIdx === -1) {
+        console.log('[UT] renderThinkBlocks: маркер # Анализ не найден')
         return
       }
 
+      // Маркер найден — сбрасываем флаг
       ultraThinkAwaitingThink = false
-      processedThinkElements.add(el)
-      const before = text.slice(0, match.index).trim()
-      const after = text.slice(match.index + match[0].length).trim()
-      const details = createThinkDetails(match[1])
 
-      if (el.parentNode) el.parentNode.insertBefore(details, el)
-      el.textContent = [before, after].filter(Boolean).join('\n\n')
-      if (!el.textContent.trim()) hideElement(el)
-    })
+      // Ищем закрывающий маркер "## Финальный ответ" после открывающего
+      const closeIdx = allEls.findIndex((el, i) =>
+        i > openIdx && el.matches('h1, h2, h3, h4') && /^финальный\s+ответ$/i.test((el.textContent || '').trim())
+      )
+
+      // Элементы раздумий — всё между маркерами (или до конца если закрывающего нет)
+      const thinkEls = closeIdx === -1
+        ? allEls.slice(openIdx + 1)
+        : allEls.slice(openIdx + 1, closeIdx)
+
+      // Собираем текст раздумий
+      const thinkText = thinkEls
+        .map(el => (el.textContent || '').trim())
+        .filter(Boolean)
+        .join('\n\n')
+
+      // Создаём блок раздумий и вставляем перед открывающим маркером
+      const openEl = allEls[openIdx]
+      const details = createThinkDetails(thinkText)
+      if (openEl.parentNode) {
+        openEl.parentNode.insertBefore(details, openEl)
+      }
+
+      // Скрываем открывающий маркер и все элементы раздумий
+      processedThinkElements.add(openEl)
+      hideElement(openEl)
+      thinkEls.forEach(el => {
+        processedThinkElements.add(el)
+        hideElement(el)
+      })
+
+      // Скрываем закрывающий маркер если есть
+      if (closeIdx !== -1) {
+        const closeEl = allEls[closeIdx]
+        processedThinkElements.add(closeEl)
+        hideElement(closeEl)
+      }
+
+    } finally {
+      ultraThinkRenderBusy = false
+      ultraThinkStreamingActive = false
+      ultraThinkDetailsEl = null
+      ultraThinkPreEl = null
+    }
   }
 
   async function sendSystemMessage(message) {
@@ -1255,6 +1697,124 @@
     return host
   }
 
+  // ─── Карточка для плагинных команд ──────────────────────────────────────
+
+  function createPluginCommandCard(commandType, payload) {
+    const reg = pluginCommandRegistry.get(commandType)
+    if (!reg) return createCard(`${commandType}: ${payload}`)
+
+    // Строим карточку аналогично createCard но с иконкой и лейблом плагина
+    const host = document.createElement('div')
+    host.className = 'gemini-agent-host'
+    host.setAttribute('data-getools-plugin-cmd', commandType)
+    setImportant(host, {
+      display: 'block', margin: '16px 0', 'max-width': '520px',
+      'font-size': '16px', 'line-height': 'normal', 'white-space': 'normal',
+    })
+
+    const root = host.attachShadow({ mode: 'open' })
+    const shadowStyle = document.createElement('style')
+    // Переиспользуем те же стили что у createCard
+    shadowStyle.textContent = `
+      :host { all:initial; display:block !important; margin:16px 0 !important; max-width:448px !important; font-family:"Google Sans","Segoe UI",system-ui,sans-serif !important; }
+      .card { box-sizing:border-box; display:block; width:100%; padding:24px; background:#ffffff; border:0; border-radius:24px; box-shadow:0 1px 3px rgba(0,0,0,0.1); color:#1f1f1f; }
+      .header { display:flex; align-items:center; gap:12px; margin-bottom:20px; color:#444746; font-size:16px; font-weight:500; }
+      .plugin-icon { width:20px; height:20px; color:#0b57d0; flex:0 0 auto; }
+      .cmd { background:#f0f4f9; padding:12px 16px; border-radius:12px; font-family:"Cascadia Mono","Consolas",monospace; font-size:14px; color:#1f1f1f; word-break:break-word; white-space:pre-wrap; margin-bottom:24px; line-height:1.4; }
+      .btns { display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+      button { font-family:"Google Sans","Segoe UI",system-ui,sans-serif; font-size:14px; font-weight:500; border-radius:999px; padding:10px 20px; cursor:pointer; transition:background 0.16s ease,box-shadow 0.16s ease,transform 0.08s ease; border:none; }
+      .deny { background:transparent; color:#0b57d0; }
+      .deny:hover { background:#f1f3f4; }
+      .run { background:#0b57d0; color:#fff; padding-inline:24px; }
+      .run:hover { box-shadow:0 2px 6px rgba(60,64,67,0.22); }
+      .run:active { transform:scale(0.95); }
+      .run:disabled { opacity:0.6; cursor:not-allowed; }
+      .result { display:none; margin-top:20px; padding:14px 16px; border-radius:12px; font-family:"Cascadia Mono","Consolas",monospace; font-size:12.5px; line-height:1.45; white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
+      .success { display:block; background:rgba(129,201,149,0.18); color:#1e6e3a; }
+      .error { display:block; background:rgba(242,139,130,0.16); color:#b3261e; }
+      .card.done .btns { display:none; }
+      @media (prefers-color-scheme:dark) {
+        .card { background:#1f1f1f; color:#e3e3e3; }
+        .header { color:#c4c7c5; }
+        .cmd { background:#2b2c2f; color:#e3e3e3; }
+        .deny { color:#a8c7fa; }
+        .run { background:#a8c7fa; color:#062e6f; }
+        .success { background:rgba(129,201,149,0.18); color:#81c995; }
+        .error { background:rgba(242,139,130,0.16); color:#f28b82; }
+      }
+    `
+
+    const card = document.createElement('div')
+    card.className = 'card'
+
+    const header = document.createElement('div')
+    header.className = 'header'
+    const iconEl = matIcon(reg.icon, 'font-size:20px;color:#0b57d0;')
+    iconEl.classList.add('plugin-icon')
+    const headerText = document.createElement('span')
+    headerText.textContent = reg.label
+    header.append(iconEl, headerText)
+
+    const codeBox = document.createElement('div')
+    codeBox.className = 'cmd'
+    codeBox.textContent = payload
+
+    const btns = document.createElement('div')
+    btns.className = 'btns'
+    const btnDeny = document.createElement('button')
+    btnDeny.className = 'deny'
+    btnDeny.textContent = 'Отклонить'
+    const btnRun = document.createElement('button')
+    btnRun.className = 'run'
+    btnRun.textContent = 'Выполнить'
+    const resultBox = document.createElement('div')
+    resultBox.className = 'result'
+
+    btns.append(btnDeny, btnRun)
+    card.append(header, codeBox, btns, resultBox)
+    root.append(shadowStyle, card)
+
+    btnDeny.onclick = (e) => { e.stopPropagation(); host.remove() }
+
+    let executed = false
+    btnRun.onclick = async (e) => {
+      e.stopPropagation()
+      if (executed) return
+      executed = true
+      btnRun.disabled = true
+      btnRun.textContent = 'Выполняется...'
+      host.setAttribute('data-gemini-agent-card-state', 'running')
+
+      try {
+        const result = await reg.handler(payload)
+        const success = result?.success !== false
+        headerText.textContent = success ? `${reg.label} — готово` : `${reg.label} — ошибка`
+        resultBox.className = 'result ' + (success ? 'success' : 'error')
+        resultBox.textContent = result?.stdout || result?.output || (success ? 'OK' : result?.error || 'Ошибка')
+        card.classList.add('done')
+        host.setAttribute('data-gemini-agent-card-state', success ? 'success' : 'error')
+
+        await sendSystemMessage(formatSystemResult(`${commandType}: ${payload}`, {
+          success,
+          stdout: result?.stdout || result?.output || '',
+          stderr: result?.error || '',
+          cwd: currentCwd,
+        }))
+      } catch (err) {
+        headerText.textContent = `${reg.label} — ошибка`
+        resultBox.className = 'result error'
+        resultBox.textContent = err.message
+        card.classList.add('done')
+        host.setAttribute('data-gemini-agent-card-state', 'error')
+        await sendSystemMessage(formatSystemResult(`${commandType}: ${payload}`, {
+          success: false, stdout: '', stderr: err.message, cwd: currentCwd,
+        }))
+      }
+    }
+
+    return host
+  }
+
   function createFileCard(filePath, content) {
     const safePath = String(filePath || '').trim()
     const preview = String(content || '')
@@ -1542,7 +2102,12 @@
     if (action.type === 'CREATE_FILE') {
       const file = parseCreateFilePayload(action.payload)
       if (!file) return
+      // Автоснапшот перед первой записью файла в сессии
+      autoSnapshotOnce()
       card = createFileCard(file.filePath, file.content)
+    } else if (pluginCommandRegistry.has(action.type)) {
+      // Плагинная команда — создаём карточку и выполняем через обработчик плагина
+      card = createPluginCommandCard(action.type, action.payload)
     } else {
       const cmd = cleanCommand(action.payload)
       console.log('[Agent] EXECUTE cmd после cleanCommand:', JSON.stringify(cmd), '| isLikely:', isLikelyRealCommand(cmd, node.textContent || ''))
@@ -1636,12 +2201,44 @@
     if (Date.now() - lastHideSweepAt > 2500) {
       lastHideSweepAt = Date.now()
       if (agentEnabled) hideSystemMessages()
-      if (ultraThinkEnabled || ultraThinkAwaitingThink) hideUltraThinkMarkers()
+      if (ultraThinkEnabled || ultraThinkAwaitingThink) {
+        hideUltraThinkMarkers()
+        hideUltraThinkFromUserMessages()
+      }
     }
-    if (ultraThinkEnabled || ultraThinkAwaitingThink) renderThinkBlocks()
+    // renderThinkBlocks вызывается только через waitForGenerationEnd после конца генерации
     scan()
     replaceModelAvatars()
     updateAgentObserver()
+  }
+
+  // Ждёт завершения генерации и запускает renderThinkBlocks
+  let ultraThinkWaitTimer = null
+  function waitForGenerationEnd() {
+    if (ultraThinkWaitTimer) return
+    ultraThinkWaitTimer = setInterval(() => {
+      if (!ultraThinkAwaitingThink) {
+        clearInterval(ultraThinkWaitTimer)
+        ultraThinkWaitTimer = null
+        return
+      }
+      if (!isGenerating()) {
+        clearInterval(ultraThinkWaitTimer)
+        ultraThinkWaitTimer = null
+        // Небольшая задержка чтобы DOM успел устояться после конца генерации
+        // Пробуем несколько раз с нарастающей задержкой если маркер не найден сразу
+        let attempts = 0
+        const tryRender = () => {
+          if (!ultraThinkAwaitingThink) return // уже обработано
+          renderThinkBlocks()
+          attempts++
+          if (ultraThinkAwaitingThink && attempts < 5) {
+            setTimeout(tryRender, 300 * attempts)
+          }
+        }
+        setTimeout(tryRender, 300)
+      }
+    }, 200)
   }
 
   function scheduleAgentPass(delay = 350) {
@@ -1661,6 +2258,9 @@
     }, wait)
   }
 
+  // Текущий стриминговый элемент — обновляется MutationObserver во время генерации
+  let utCurrentStreamingEl = null
+
   const observer = new MutationObserver((mutations) => {
     if (!agentEnabled && !ultraThinkAwaitingThink) return
 
@@ -1670,6 +2270,24 @@
       return m.addedNodes.length || m.type === 'characterData'
     })
     if (!relevant) return
+
+    // Отслеживаем текущий стриминговый контейнер — последний элемент который получил новые узлы
+    // и не является сообщением пользователя
+    if (ultraThinkAwaitingThink) {
+      for (const m of mutations) {
+        if (!m.addedNodes.length) continue
+        const target = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement
+        if (!target) continue
+        if (target.closest('user-query, [class*="user-query"], .query-content, .gemini-agent-host, .gemini-agent-think')) continue
+        if (target.closest('[contenteditable="true"], textarea, input')) continue
+        // Ищем ближайший крупный контейнер ответа
+        const container = target.closest('model-response, message-content, .model-response-text, ms-chat-turn') || target
+        if (container && container !== document.body) {
+          utCurrentStreamingEl = container
+        }
+      }
+    }
+
     scheduleAgentPass()
   })
   let observingAgentDom = false
@@ -1705,6 +2323,63 @@
     el.textContent = name
     if (extraStyle) el.style.cssText = extraStyle
     return el
+  }
+
+  // ─── Экран загрузки поверх Gemini ────────────────────────────────────────
+
+  function showSetupScreen(title = 'Настройка...', subtitle = '') {
+    let screen = document.getElementById('getools-setup-screen')
+    if (!screen) {
+      screen = document.createElement('div')
+      screen.id = 'getools-setup-screen'
+      setImportant(screen, {
+        position: 'fixed', inset: '0', 'z-index': '2147483646',
+        background: '#131314', display: 'flex', 'flex-direction': 'column',
+        'align-items': 'center', 'justify-content': 'center',
+        'font-family': "'Google Sans','Segoe UI',system-ui,sans-serif",
+        transition: 'opacity 0.3s ease',
+      })
+
+      const logo = document.createElement('img')
+      logo.src = window.__geminiAgentLogoUrl || ''
+      logo.style.cssText = 'width:72px;height:72px;object-fit:contain;margin-bottom:32px;'
+      logo.draggable = false
+
+      const track = document.createElement('div')
+      track.style.cssText = 'width:200px;height:3px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden;margin-bottom:28px;'
+      const bar = document.createElement('div')
+      bar.id = 'getools-setup-bar'
+      bar.style.cssText = 'height:100%;width:40%;background:linear-gradient(90deg,#4285f4,#a8c7fa);border-radius:999px;animation:getools-slide-in 1.4s cubic-bezier(0.4,0,0.6,1) infinite;'
+      track.appendChild(bar)
+
+      const titleEl = document.createElement('div')
+      titleEl.id = 'getools-setup-title'
+      titleEl.style.cssText = 'font-size:16px;font-weight:500;color:#e3e3e3;margin-bottom:8px;'
+
+      const subtitleEl = document.createElement('div')
+      subtitleEl.id = 'getools-setup-subtitle'
+      subtitleEl.style.cssText = 'font-size:13px;color:#9aa0a6;'
+
+      screen.append(logo, track, titleEl, subtitleEl)
+      document.body.appendChild(screen)
+    }
+
+    const titleEl = screen.querySelector('#getools-setup-title')
+    const subtitleEl = screen.querySelector('#getools-setup-subtitle')
+    if (titleEl) titleEl.textContent = title
+    if (subtitleEl) subtitleEl.textContent = subtitle
+    screen.style.setProperty('opacity', '1', 'important')
+    screen.style.setProperty('display', 'flex', 'important')
+    return screen
+  }
+
+  function hideSetupScreen() {
+    const screen = document.getElementById('getools-setup-screen')
+    if (!screen) return
+    screen.style.opacity = '0'
+    setTimeout(() => {
+      screen.style.setProperty('display', 'none', 'important')
+    }, 350)
   }
 
   function openPluginsOverlay() {
@@ -1867,7 +2542,42 @@
     uploadZone.onclick = () => {
       const inp = document.createElement('input')
       inp.type = 'file'; inp.accept = '.zip'
-      inp.onchange = (e) => { if (e.target.files[0]) alert('Загрузка: ' + e.target.files[0].name) }
+      inp.onchange = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        if (!window.electronAgent?.installPluginFromZip) {
+          alert('API установки плагинов недоступен')
+          return
+        }
+        // Читаем ZIP как ArrayBuffer и передаём в main process
+        const buf = await file.arrayBuffer()
+        const uint8 = new Uint8Array(buf)
+        // Передаём как обычный массив (IPC сериализует)
+        const result = await window.electronAgent.installPluginFromZip(Array.from(uint8), file.name)
+        if (result.success) {
+          alert(`Плагин "${result.plugin?.name || result.plugin?.id}" установлен`)
+          // Обновляем список
+          if (window.electronAgent?.listPlugins) {
+            window.electronAgent.listPlugins().then(res => {
+              while (pluginList.firstChild) pluginList.removeChild(pluginList.firstChild)
+              if (!res.success || !res.plugins.length) {
+                const empty = document.createElement('div')
+                empty.textContent = 'Плагины не установлены'
+                empty.style.cssText = 'font-size:13px;color:#9aa0a6;padding:8px 0;'
+                pluginList.append(empty)
+                return
+              }
+              res.plugins.forEach(p => pluginList.append(renderPluginCard(p)))
+            })
+          }
+          // Если плагин содержит промпт — запускаем процесс добавления в Saved Info
+          if (result.plugin?.prompt) {
+            overlay.style.setProperty('display', 'none', 'important')
+            window.getools._rerunSetup?.()
+          }
+        } else {          alert('Ошибка установки: ' + (result.error || 'неизвестная ошибка'))
+        }
+      }
       inp.click()
     }
 
@@ -1904,28 +2614,31 @@
     promptsLeft.append(promptsIcon, promptsInfo)
     const promptsArrow = matIcon('arrow_forward', 'font-size:18px;color:#9aa0a6;')
     promptsSection.append(promptsLeft, promptsArrow)
-    promptsSection.onclick = () => {
+    promptsSection.onclick = async () => {
+      const confirmed = await window.electronAgent.confirm(
+        'Добавить системные промпты GeTools заново?',
+        'Промпты будут добавлены в "Персональный контекст" Gemini. Это займёт около 1 минуты.'
+      )
+      if (!confirmed.allowed) return
+
       // Сбрасываем флаг "done" чтобы промпты добавились заново
       Object.keys(localStorage)
         .filter(k => k.startsWith('getools_prompts_done:') || k.startsWith('getools_prompts_added_count:'))
         .forEach(k => localStorage.removeItem(k))
       overlay.style.setProperty('display', 'none', 'important')
-      location.href = 'https://gemini.google.com/saved-info'
+      showSetupScreen('Настройка системных промптов...', 'Обычно занимает 1 минуту')
+      setTimeout(() => {
+        location.href = 'https://gemini.google.com/saved-info'
+      }, 800)
     }
     promptsSection.onmouseenter = () => promptsSection.style.setProperty('border-color', '#444746', 'important')
     promptsSection.onmouseleave = () => promptsSection.style.setProperty('border-color', '#2d2f31', 'important')
 
-    // Plugin list (заглушка)
+    // Plugin list — реальные данные из main.js
     const pluginList = document.createElement('div')
     setImportant(pluginList, { display: 'flex', 'flex-direction': 'column', gap: '10px' })
 
-    const plugins = [
-      { name: 'Web Research Pro', desc: 'Поиск по документации в реальном времени', icon: 'search', color: '#4285f4', enabled: true },
-      { name: 'Notion Sync', desc: 'Синхронизация заметок и задач', icon: 'sync', color: '#34a853', enabled: false },
-      { name: 'Code Interpreter', desc: 'Запуск локальных скриптов', icon: 'code', color: '#9c27b0', enabled: true },
-    ]
-
-    plugins.forEach(p => {
+    function renderPluginCard(p) {
       const card = document.createElement('div')
       card.className = 'getools-plugin-card'
       setImportant(card, { display: 'flex', 'align-items': 'center', gap: '14px' })
@@ -1934,20 +2647,19 @@
       setImportant(iconBox, {
         width: '44px', height: '44px', 'border-radius': '12px',
         display: 'flex', 'align-items': 'center', 'justify-content': 'center',
-        background: p.color + '22', color: p.color, 'flex-shrink': '0',
-        overflow: 'hidden',
+        background: '#4285f422', color: '#4285f4', 'flex-shrink': '0', overflow: 'hidden',
       })
-      const ic = matIcon(p.icon)
+      const ic = matIcon(p.icon || 'extension')
       ic.style.cssText = 'font-size:22px;line-height:1;display:block;color:inherit;'
       iconBox.append(ic)
 
       const info = document.createElement('div')
       setImportant(info, { flex: '1', 'min-width': '0' })
       const pName = document.createElement('div')
-      pName.textContent = p.name
+      pName.textContent = p.name || p.id
       pName.style.cssText = 'font-size:14px;font-weight:500;'
       const pDesc = document.createElement('div')
-      pDesc.textContent = p.desc
+      pDesc.textContent = p.description || (p.commands ? `Команды: ${p.commands.join(', ')}` : '')
       pDesc.style.cssText = 'font-size:12px;color:#9aa0a6;margin-top:2px;'
       info.append(pName, pDesc)
 
@@ -1955,14 +2667,41 @@
       sw.className = 'getools-switch'
       const swInput = document.createElement('input')
       swInput.type = 'checkbox'
-      swInput.checked = p.enabled
+      swInput.checked = !!p.enabled
       const swSlider = document.createElement('span')
       swSlider.className = 'getools-slider'
       sw.append(swInput, swSlider)
+      swInput.onchange = async () => {
+        await window.electronAgent?.togglePlugin?.(p.id, swInput.checked)
+      }
 
       card.append(iconBox, info, sw)
-      pluginList.append(card)
-    })
+      return card
+    }
+
+    // Загружаем плагины асинхронно
+    const loadingMsg = document.createElement('div')
+    loadingMsg.textContent = 'Загрузка плагинов...'
+    loadingMsg.style.cssText = 'font-size:13px;color:#9aa0a6;padding:8px 0;'
+    pluginList.append(loadingMsg)
+
+    if (window.electronAgent?.listPlugins) {
+      window.electronAgent.listPlugins().then(res => {
+        while (pluginList.firstChild) pluginList.removeChild(pluginList.firstChild)
+        if (!res.success || !res.plugins.length) {
+          const empty = document.createElement('div')
+          empty.textContent = 'Плагины не установлены'
+          empty.style.cssText = 'font-size:13px;color:#9aa0a6;padding:8px 0;'
+          pluginList.append(empty)
+          return
+        }
+        res.plugins.forEach(p => pluginList.append(renderPluginCard(p)))
+      }).catch(() => {
+        loadingMsg.textContent = 'Ошибка загрузки плагинов'
+      })
+    } else {
+      loadingMsg.textContent = 'API плагинов недоступен'
+    }
 
     body.append(urlSection, uploadZone, divider, promptsSection, installedHeader, pluginList)
     panel.append(header, body)
@@ -2110,6 +2849,68 @@
       })
       return `[Последние команды сессии]\n${lines.join('\n')}`
     } catch (_) { return '' }
+  }
+
+  // ─── Снапшоты / чекпоинты ────────────────────────────────────────────────
+
+  let sessionSnapshotDone = false
+  let lastSnapshotId = localStorage.getItem('getools_last_snapshot_id') || null
+
+  async function autoSnapshotOnce() {
+    if (sessionSnapshotDone || !window.electronAgent?.createSnapshot) return
+    sessionSnapshotDone = true
+    try {
+      const res = await window.electronAgent.createSnapshot('Авто: перед задачей')
+      if (res.success) {
+        lastSnapshotId = res.snapshotId
+        localStorage.setItem('getools_last_snapshot_id', res.snapshotId)
+        console.log(`[Agent] Автоснапшот: ${res.snapshotId} (${res.fileCount} файлов)`)
+        updateRollbackButton()
+      }
+    } catch (_) {}
+  }
+
+  function updateRollbackButton() {
+    const btn = document.getElementById('gemini-agent-rollback')
+    if (!btn) return
+    const lbl = btn.querySelector('.getools-toolbox-label')
+    if (lbl) lbl.textContent = lastSnapshotId ? 'Откатить изменения' : 'Нет снапшота'
+    btn.setAttribute('aria-disabled', lastSnapshotId ? 'false' : 'true')
+    btn.style.opacity = lastSnapshotId ? '' : '0.45'
+  }
+
+  function createRollbackButton() {
+    if (!window.electronAgent?.restoreSnapshot) return
+
+    const btn = createToolboxItem({
+      id: 'gemini-agent-rollback',
+      icon: 'history',
+      label: lastSnapshotId ? 'Откатить изменения' : 'Нет снапшота',
+      checked: false,
+      onClick: async () => {
+        if (!lastSnapshotId) return
+        const confirmed = await window.electronAgent.confirm(
+          'Откатить все изменения?',
+          `Все файлы будут восстановлены из снапшота. Это действие необратимо.`
+        )
+        if (!confirmed.allowed) return
+
+        const res = await window.electronAgent.restoreSnapshot(lastSnapshotId)
+        if (res.success) {
+          sessionSnapshotDone = false
+          lastSnapshotId = null
+          localStorage.removeItem('getools_last_snapshot_id')
+          updateRollbackButton()
+          await sendSystemMessage(
+            `[SYSTEM] Откат выполнен. Восстановлено ${res.restored} файлов из снапшота "${res.label}". Все изменения отменены.`
+          )
+        } else {
+          alert('Ошибка отката: ' + res.error)
+        }
+      },
+    })
+    updateRollbackButton()
+    insertIntoToolbox(btn)
   }
 
   // ─── Кнопка рабочей директории ───────────────────────────────────────────
@@ -2421,23 +3222,57 @@
 
   // createButton убрана — агент всегда включён
   setTimeout(createAutoRunButton, 1000)
-  setTimeout(createUltraThinkButton, 1000)
-  setTimeout(createCwdButton, 1000)
-  setTimeout(createPluginMenuButton, 1000)
-  setInterval(createPluginMenuButton, 700)
-  // Toolbox items — вставляем когда toolbox открыт
-  setInterval(() => {
-    createUltraThinkButton()
-    createCwdButton()
-  }, 500)
+
+  // MutationObserver для меню и toolbox — с дебаунсом и защитой от рекурсии
+  let uiObserverTimer = null
+  let uiObserverRunning = false
+
+  const uiObserver = new MutationObserver((mutations) => {
+    // Игнорируем мутации от наших собственных вставок
+    const relevant = mutations.some(m => {
+      const target = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement
+      if (!target) return false
+      // Пропускаем мутации внутри наших элементов
+      if (target.closest?.('#toolbox-drawer-menu .gemini-agent-toolbox-item')) return false
+      if (target.closest?.('.gemini-agent-plugin-menu-item')) return false
+      return true
+    })
+    if (!relevant) return
+
+    // Дебаунс 200мс
+    if (uiObserverTimer) clearTimeout(uiObserverTimer)
+    uiObserverTimer = setTimeout(() => {
+      if (uiObserverRunning) return
+      uiObserverRunning = true
+      try {
+        // Меню настроек
+        const menuContent = document.querySelector('.cdk-overlay-container .mat-mdc-menu-content')
+          || document.querySelector('.mat-mdc-menu-content')
+        if (menuContent && !menuContent.querySelector('.gemini-agent-plugin-menu-item')) {
+          createPluginMenuButton()
+        }
+        // Toolbox drawer
+        const toolbox = document.getElementById('toolbox-drawer-menu')
+        if (toolbox) {
+          if (!toolbox.querySelector('#gemini-agent-ultrathink')) createUltraThinkButton()
+          if (!toolbox.querySelector('#gemini-agent-cwd')) createCwdButton()
+          if (!toolbox.querySelector('#gemini-agent-rollback')) createRollbackButton()
+        }
+      } finally {
+        uiObserverRunning = false
+      }
+    }, 200)
+  })
+  uiObserver.observe(document.body, { childList: true, subtree: true })
+
+  // Один раз при старте для Auto RUN (он в поле ввода)
+  setTimeout(createAutoRunButton, 1500)
+  setTimeout(initCwd, 1500)
+
+  // Редкий fallback — раз в 15 секунд для Auto RUN если потерялся
   controlsTimer = setInterval(() => {
     createAutoRunButton()
-    createUltraThinkButton()
-    createCwdButton()
-    createPluginMenuButton()
   }, 15000)
-
-  setTimeout(initCwd, 1500)
 
   function getInput() {
     return document.querySelector('rich-textarea div[contenteditable="true"]')
@@ -2451,6 +3286,18 @@
       const label = `${btn.getAttribute('aria-label') || ''} ${btn.textContent || ''}`.toLowerCase()
       return /send|отправ|submit/.test(label)
     })
+  }
+
+  function getStopButton() {
+    const buttons = [...document.querySelectorAll('button')]
+    return buttons.find(btn => {
+      const label = `${btn.getAttribute('aria-label') || ''} ${btn.textContent || ''}`.toLowerCase()
+      return /stop|стоп|остановить|cancel.*generat/.test(label)
+    })
+  }
+
+  function isGenerating() {
+    return !!getStopButton()
   }
 
   function isCurrentSendButton(btn) {
@@ -2483,9 +3330,15 @@
       if (btn && !btn.disabled) {
         btn.click()
         ultraThinkAwaitingThink = ultraThinkEnabled
+        ultraThinkStreamingActive = false
+        ultraThinkDetailsEl = null
+        ultraThinkPreEl = null
+        utCurrentStreamingEl = null
+        utReset()
         updateAgentObserver()
         scheduleAgentPass(0)
         hideUltraThinkMarkersBurst(8000)
+        if (ultraThinkEnabled) waitForGenerationEnd()
         return true
       }
     } finally {
@@ -2688,6 +3541,22 @@
     }
     if (!prompts.length) prompts = [SAVED_INFO_PROMPT]
 
+    // Добавляем промпты из установленных плагинов
+    if (window.electronAgent?.listPlugins) {
+      try {
+        const res = await window.electronAgent.listPlugins()
+        if (res?.success && res.plugins?.length) {
+          for (const plugin of res.plugins) {
+            if (plugin.enabled && plugin.prompt && typeof plugin.prompt === 'string' && plugin.prompt.trim()) {
+              prompts.push(plugin.prompt.trim())
+              console.log(`[Agent] Промпт плагина "${plugin.name || plugin.id}" добавлен`)
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Agent] Не удалось загрузить промпты плагинов:', e)
+      }
+    }
     const doneKey = 'getools_prompts_done:' + hashText(prompts.join('|'))
     const addedKey = 'getools_prompts_added_count:' + hashText(prompts.join('|'))
 
@@ -2696,7 +3565,8 @@
 
     // Не на странице saved-info — редиректим
     if (!location.href.startsWith(setupUrl)) {
-      location.href = setupUrl
+      showSetupScreen('Настройка системных промптов...', 'Обычно занимает 1 минуту')
+      setTimeout(() => { location.href = setupUrl }, 400)
       return true
     }
 
@@ -2710,6 +3580,10 @@
 
     const promptToAdd = prompts[addedCount]
     console.log(`[Agent] Добавляю промпт ${addedCount + 1}/${prompts.length}`)
+    showSetupScreen(
+      `Настройка системных промптов... (${addedCount + 1}/${prompts.length})`,
+      'Обычно занимает 1 минуту'
+    )
 
     // Ждём появления кнопки "Добавить"
     let addButton = null
@@ -2759,7 +3633,8 @@
 
           if (addedCount >= prompts.length) {
             localStorage.setItem(doneKey, 'done')
-            setTimeout(() => { location.href = 'https://gemini.google.com' }, 500)
+            showSetupScreen('Готово!', 'Системные промпты успешно добавлены')
+            setTimeout(() => { location.href = 'https://gemini.google.com' }, 1200)
           } else {
             setTimeout(() => { location.reload() }, 800)
           }
@@ -2771,6 +3646,13 @@
 
     sessionStorage.removeItem('getools_prompts_redirecting')
     return false
+  }
+
+  // Экспортируем для вызова после установки плагина
+  window.getools._rerunSetup = () => {
+    // Просто запускаем setupSavedInfoPrompt — если появились новые промпты от плагинов,
+    // хеш doneKey изменится и процесс запустится автоматически
+    setupSavedInfoPrompt()
   }
 
   setTimeout(setupSavedInfoPrompt, 1000)

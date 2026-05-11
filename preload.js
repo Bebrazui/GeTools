@@ -13,4 +13,15 @@ contextBridge.exposeInMainWorld('electronAgent', {
   getCwd: () => ipcRenderer.invoke('agent:getCwd'),
   setCwd: (cwd) => ipcRenderer.invoke('agent:setCwd', { cwd }),
   pickCwd: () => ipcRenderer.invoke('agent:pickCwd'),
+  // Снапшоты
+  createSnapshot: (label, filePath) => ipcRenderer.invoke('agent:createSnapshot', { label, filePath }),
+  listSnapshots: () => ipcRenderer.invoke('agent:listSnapshots'),
+  restoreSnapshot: (snapshotId) => ipcRenderer.invoke('agent:restoreSnapshot', { snapshotId }),
+  deleteSnapshot: (snapshotId) => ipcRenderer.invoke('agent:deleteSnapshot', { snapshotId }),
+  // Плагины
+  listPlugins: () => ipcRenderer.invoke('agent:listPlugins'),
+  togglePlugin: (pluginId, enabled) => ipcRenderer.invoke('agent:togglePlugin', { pluginId, enabled }),
+  installPlugin: (sourceDir) => ipcRenderer.invoke('agent:installPlugin', { sourceDir }),
+  uninstallPlugin: (pluginId) => ipcRenderer.invoke('agent:uninstallPlugin', { pluginId }),
+  installPluginFromZip: (bytes, filename) => ipcRenderer.invoke('agent:installPluginFromZip', { bytes, filename }),
 })
