@@ -6,6 +6,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "fresh": "electron . --getools-fresh",
+    "test:prompts": "electron . --getools-reset-prompts",
     "build": "electron-builder --win"
   },
   "build": {
@@ -20,11 +22,14 @@
       "preload.js",
       "inject.js",
       "splash.html",
+      "settings.html",
+      "preferences.html",
       "pluginPage.html",
       "AGENT_PROMPT.md",
       "logo.ico",
       "logo.png",
-      "transparent.png"
+      "transparent.png",
+      "icons/"
     ]
   },
   "dependencies": {},

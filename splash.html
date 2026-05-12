@@ -54,76 +54,8 @@
       100% { transform: translateX(650%); }
     }
 
-    /* Language Selector */
-    .lang-overlay {
-      position: fixed;
-      inset: 0;
-      background: #131314;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-      -webkit-app-region: drag;
-    }
-
-    .lang-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 24px;
-      -webkit-app-region: no-drag;
-    }
-
-    .lang-logo {
-      width: 72px;
-      height: 72px;
-      object-fit: contain;
-      margin-bottom: 8px;
-    }
-
-    .lang-title {
-      font-size: 28px;
-      font-weight: 500;
-      color: #e3e3e3;
-      letter-spacing: 0.5px;
-    }
-
-    .lang-subtitle {
-      font-size: 14px;
-      color: #9aa0a6;
-      text-align: center;
-    }
-
-    .lang-buttons {
-      display: flex;
-      gap: 12px;
-      margin-top: 8px;
-    }
-
-    .lang-btn {
-      padding: 12px 32px;
-      border-radius: 24px;
-      border: 1px solid rgba(196, 199, 197, 0.3);
-      background: transparent;
-      color: #e3e3e3;
-      font-size: 15px;
-      font-family: inherit;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s;
-      -webkit-app-region: no-drag;
-    }
-
-    .lang-btn:hover {
-      background: rgba(168, 199, 250, 0.12);
-      border-color: #a8c7fa;
-      color: #a8c7fa;
-    }
-
-    .lang-btn:active {
-      transform: scale(0.97);
-    }
+    /* Language Selector — больше не используется, оставлен для совместимости */
+    .lang-overlay { display: none !important; }
   </style>
 </head>
 <body>
@@ -132,34 +64,10 @@
     <div class="bar"></div>
   </div>
 
-  <!-- Language Selector — показывается при первом запуске -->
-  <div class="lang-overlay" id="langOverlay">
-    <div class="lang-card">
-      <img class="lang-logo" src="transparent.png" alt="GeTools" draggable="false">
-      <div class="lang-title">GeTools</div>
-      <div class="lang-subtitle">Choose your language / Выберите язык</div>
-      <div class="lang-buttons">
-        <button class="lang-btn" id="btnEn">English</button>
-        <button class="lang-btn" id="btnRu">Русский</button>
-      </div>
-    </div>
-  </div>
+  <!-- Language Selector убран — теперь в settings.html -->
 
   <script>
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('needsLanguageSelection') === '1') {
-      document.getElementById('langOverlay').style.display = 'flex'
-    }
-
-    async function selectLanguage(lang) {
-      try {
-        await window.electronAgent.setLanguage(lang)
-      } catch (_) {}
-      document.getElementById('langOverlay').style.display = 'none'
-    }
-
-    document.getElementById('btnEn').addEventListener('click', () => selectLanguage('en'))
-    document.getElementById('btnRu').addEventListener('click', () => selectLanguage('ru'))
+    // Сплэш больше не управляет языком
   </script>
 </body>
 </html>

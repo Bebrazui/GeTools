@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>GeTools — Preferences</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #131314;
+      color: #e3e3e3;
+      font-family: 'Google Sans', 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Titlebar ── */
+    .titlebar {
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: #131314;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      -webkit-app-region: drag;
+      flex-shrink: 0;
+    }
+    .titlebar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+    }
+    .titlebar-left img { width: 16px; height: 16px; object-fit: contain; }
+    .titlebar-close {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.4);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      transition: background 0.15s, color 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .titlebar-close:hover { background: rgba(242,139,130,0.15); color: #f28b82; }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      height: calc(100% - 40px);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 180px;
+      flex-shrink: 0;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      -webkit-app-region: no-drag;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: #e3e3e3; }
+    .nav-item.active { background: rgba(255,255,255,0.08); color: #e3e3e3; }
+    .nav-icon {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      opacity: 0.5;
+      filter: invert(1);
+    }
+    .nav-item.active .nav-icon,
+    .nav-item:hover .nav-icon {
+      opacity: 1;
+    }
+
+    /* ── Content ── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      -webkit-app-region: no-drag;
+    }
+    .content::-webkit-scrollbar { width: 4px; }
+    .content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+    .pane { display: none; }
+    .pane.active { display: block; }
+
+    .pane-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: #e3e3e3;
+      margin-bottom: 20px;
+    }
+
+    /* ── Row ── */
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .row:last-child { border-bottom: none; }
+    .row-info { flex: 1; min-width: 0; }
+    .row-label { font-size: 13px; color: #e3e3e3; }
+    .row-desc { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 2px; }
+
+    /* ── Language buttons ── */
+    .lang-group { display: flex; gap: 8px; }
+    .lang-btn {
+      padding: 7px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: transparent;
+      color: rgba(255,255,255,0.5);
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .lang-btn:hover { border-color: rgba(255,255,255,0.25); color: #e3e3e3; }
+    .lang-btn.active { border-color: #e3e3e3; color: #e3e3e3; background: rgba(255,255,255,0.06); }
+
+    /* ── Theme grid ── */
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .theme-card {
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+      background: transparent;
+      padding: 0;
+      font-family: inherit;
+    }
+    .theme-card:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+    .theme-card.active { border-color: #e3e3e3; }
+
+    .theme-swatch { height: 44px; position: relative; overflow: hidden; }
+    .theme-swatch-bar { position: absolute; top: 0; left: 0; right: 0; height: 14px; }
+    .theme-swatch-dot { position: absolute; bottom: 6px; right: 8px; width: 22px; height: 6px; border-radius: 3px; opacity: 0.8; }
+    .theme-swatch-dot2 { position: absolute; bottom: 6px; left: 8px; width: 14px; height: 6px; border-radius: 3px; opacity: 0.4; }
+    .theme-name { padding: 6px 8px; font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.4); }
+    .theme-card.active .theme-name { color: #e3e3e3; }
+
+    .swatch-deep-ocean .theme-swatch { background: #0d1117; }
+    .swatch-deep-ocean .theme-swatch-bar { background: #161b22; }
+    .swatch-deep-ocean .theme-swatch-dot { background: #1f6feb; }
+    .swatch-deep-ocean .theme-swatch-dot2 { background: #8b949e; }
+    .swatch-deep-ocean .theme-name { background: #0d1117; }
+
+    .swatch-coffee .theme-swatch { background: #1a1208; }
+    .swatch-coffee .theme-swatch-bar { background: #241a0e; }
+    .swatch-coffee .theme-swatch-dot { background: #c8a96e; }
+    .swatch-coffee .theme-swatch-dot2 { background: #8b7355; }
+    .swatch-coffee .theme-name { background: #1a1208; }
+
+    .swatch-midnight .theme-swatch { background: #000000; }
+    .swatch-midnight .theme-swatch-bar { background: #0a0a0a; }
+    .swatch-midnight .theme-swatch-dot { background: #7c3aed; }
+    .swatch-midnight .theme-swatch-dot2 { background: #4c1d95; }
+    .swatch-midnight .theme-name { background: #000000; }
+
+    .swatch-forest .theme-swatch { background: #0d1f0d; }
+    .swatch-forest .theme-swatch-bar { background: #132613; }
+    .swatch-forest .theme-swatch-dot { background: #22c55e; }
+    .swatch-forest .theme-swatch-dot2 { background: #166534; }
+    .swatch-forest .theme-name { background: #0d1f0d; }
+
+    .swatch-aurora .theme-swatch { background: #0f0e17; }
+    .swatch-aurora .theme-swatch-bar { background: #1a1830; }
+    .swatch-aurora .theme-swatch-dot { background: #ff6b9d; }
+    .swatch-aurora .theme-swatch-dot2 { background: #c77dff; }
+    .swatch-aurora .theme-name { background: #0f0e17; }
+
+    .swatch-light .theme-swatch { background: #f0f4f9; }
+    .swatch-light .theme-swatch-bar { background: #ffffff; }
+    .swatch-light .theme-swatch-dot { background: #0b57d0; }
+    .swatch-light .theme-swatch-dot2 { background: #c4c7c5; }
+    .swatch-light .theme-name { background: #f0f4f9; color: #5f6368 !important; }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      padding: 8px 20px;
+      background: #e3e3e3;
+      color: #131314;
+      border: none;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+
+    .btn-danger {
+      padding: 8px 20px;
+      background: transparent;
+      color: #f28b82;
+      border: 1px solid rgba(242,139,130,0.3);
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-danger:hover { background: rgba(242,139,130,0.1); border-color: #f28b82; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background: #2d2f31;
+      color: #e3e3e3;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <img src="transparent.png" alt="">
+      <span>GeTools</span>
+    </div>
+    <button class="titlebar-close" id="btnClose">✕</button>
+  </div>
+
+  <div class="layout">
+
+    <nav class="sidebar">
+      <button class="nav-item active" data-pane="appearance">
+        <img class="nav-icon" src="icons/palette.svg" alt="">
+        <span id="navAppearance">Внешний вид</span>
+      </button>
+      <button class="nav-item" data-pane="language">
+        <img class="nav-icon" src="icons/language.svg" alt="">
+        <span id="navLanguage">Язык</span>
+      </button>
+      <button class="nav-item" data-pane="advanced">
+        <img class="nav-icon" src="icons/tune.svg" alt="">
+        <span id="navAdvanced">Дополнительно</span>
+      </button>
+    </nav>
+
+    <div class="content">
+
+      <!-- Appearance -->
+      <div class="pane active" id="pane-appearance">
+        <div class="pane-title" id="titleAppearance">Внешний вид</div>
+        <div class="theme-grid" id="themeGrid"></div>
+      </div>
+
+      <!-- Language -->
+      <div class="pane" id="pane-language">
+        <div class="pane-title" id="titleLanguage">Язык</div>
+        <div class="row">
+          <div class="row-info">
+            <div class="row-label" id="langLabel">Язык интерфейса</div>
+            <div class="row-desc" id="langDesc">Влияет на UI и ответы Gemini</div>
+          </div>
+          <div class="lang-group">
+            <button class="lang-btn" data-lang="ru">🇷🇺 Русский</button>
+            <button class="lang-btn" data-lang="en">🇬🇧 English</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced -->
+      <div class="pane" id="pane-advanced">
+        <div class="pane-title" id="titleAdvanced">Дополнительно</div>
+
+        <div class="row">
+          <div class="row-info">
+            <div class="row-label" id="promptsLabel">Системные промпты</div>
+            <div class="row-desc" id="promptsDesc">Переустановить инструкции агента в Gemini</div>
+          </div>
+          <button class="btn-primary" id="btnResetPrompts">Переустановить</button>
+        </div>
+
+        <div class="row">
+          <div class="row-info">
+            <div class="row-label" id="resetLabel">Сбросить GeTools</div>
+            <div class="row-desc" id="resetDesc">Удалить все настройки и начать заново</div>
+          </div>
+          <button class="btn-danger" id="btnReset">Сбросить</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const THEMES = ['deep-ocean','coffee','midnight','forest','aurora','light']
+    const THEME_NAMES = {
+      ru: { 'deep-ocean':'Океан','coffee':'Кофе','midnight':'Полночь','forest':'Лес','aurora':'Аврора','light':'Светлая' },
+      en: { 'deep-ocean':'Ocean','coffee':'Coffee','midnight':'Midnight','forest':'Forest','aurora':'Aurora','light':'Light' },
+    }
+
+    let lang = 'ru'
+    let theme = 'deep-ocean'
+
+    // ── Nav ──
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'))
+        document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'))
+        btn.classList.add('active')
+        document.getElementById('pane-' + btn.dataset.pane).classList.add('active')
+      })
+    })
+
+    // ── Theme grid ──
+    function buildThemeGrid() {
+      const grid = document.getElementById('themeGrid')
+      grid.innerHTML = ''
+      THEMES.forEach(id => {
+        const card = document.createElement('button')
+        card.className = `theme-card swatch-${id}` + (theme === id ? ' active' : '')
+        card.dataset.theme = id
+
+        const swatch = document.createElement('div')
+        swatch.className = 'theme-swatch'
+        swatch.innerHTML = `<div class="theme-swatch-bar"></div><div class="theme-swatch-dot"></div><div class="theme-swatch-dot2"></div>`
+
+        const name = document.createElement('div')
+        name.className = 'theme-name'
+        name.textContent = THEME_NAMES[lang]?.[id] || id
+
+        card.append(swatch, name)
+        card.addEventListener('click', async () => {
+          theme = id
+          document.querySelectorAll('.theme-card').forEach(c => c.classList.toggle('active', c.dataset.theme === id))
+          if (window.electronAgent?.setTheme) {
+            await window.electronAgent.setTheme(id)
+            showToast(lang === 'en' ? 'Theme applied' : 'Тема применена')
+          }
+        })
+        grid.appendChild(card)
+      })
+    }
+
+    // ── Language ──
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        lang = btn.dataset.lang
+        document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === lang))
+        if (window.electronAgent?.setLanguage) {
+          await window.electronAgent.setLanguage(lang)
+          showToast(lang === 'en' ? 'Language saved' : 'Язык сохранён')
+        }
+        buildThemeGrid() // обновляем названия тем
+      })
+    })
+
+    // ── Advanced ──
+    document.getElementById('btnResetPrompts').addEventListener('click', async () => {
+      if (!window.electronAgent) return
+      const confirmed = await window.electronAgent.confirm(
+        lang === 'en' ? 'Reinstall system prompts?' : 'Переустановить системные промпты?',
+        lang === 'en' ? 'GeTools will navigate to Gemini Saved Info and re-add all prompts.' : 'GeTools перейдёт в Saved Info Gemini и заново добавит все промпты.'
+      )
+      if (!confirmed.allowed) return
+      window.dispatchEvent(new CustomEvent('getools:reset-prompts'))
+      window.close()
+    })
+
+    document.getElementById('btnReset').addEventListener('click', async () => {
+      if (!window.electronAgent) return
+      const confirmed = await window.electronAgent.confirm(
+        lang === 'en' ? 'Reset all GeTools settings?' : 'Сбросить все настройки GeTools?',
+        lang === 'en' ? 'Language, theme and prompts setup will be cleared. GeTools will restart the onboarding.' : 'Язык, тема и настройка промптов будут удалены. GeTools запустит первоначальную настройку.'
+      )
+      if (!confirmed.allowed) return
+      await window.electronAgent.resetSettings()
+      window.close()
+    })
+
+    // ── Close ──
+    document.getElementById('btnClose').addEventListener('click', () => window.close())
+
+    // ── Toast ──
+    let toastTimer = null
+    function showToast(msg) {
+      const el = document.getElementById('toast')
+      el.textContent = msg
+      el.classList.add('show')
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => el.classList.remove('show'), 2000)
+    }
+
+    // ── Init ──
+    async function init() {
+      if (!window.electronAgent) return
+      try {
+        const lr = await window.electronAgent.getLanguage()
+        if (lr?.language) lang = lr.language
+        const tr = await window.electronAgent.getTheme()
+        if (tr?.theme) theme = tr.theme
+      } catch (_) {}
+
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === lang))
+      buildThemeGrid()
+    }
+
+    init()
+  </script>
+</body>
+</html>

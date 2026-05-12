@@ -7,7 +7,252 @@
   }
   window.__geminiAgentInjected = true
 
-  // ─── i18n ────────────────────────────────────────────────────────────────────
+  // ─── Тема ────────────────────────────────────────────────────────────────────
+  // Применяем тему через style-тег в document.head — работает после Angular init
+  // Используем !important на конкретных элементах Gemini
+
+  const THEME_STYLES = {
+    'deep-ocean': {
+      bg: '#0d1117', bg2: '#161b22', sidebar: '#0a0e14',
+      text: '#c9d1d9', text2: '#8b949e', border: '#30363d',
+      accent: '#1f6feb', accentText: '#ffffff',
+    },
+    'coffee': {
+      bg: '#1a1208', bg2: '#241a0e', sidebar: '#120d05',
+      text: '#e8d5b0', text2: '#a08060', border: '#3d2b14',
+      accent: '#c8a96e', accentText: '#1a1208',
+    },
+    'midnight': {
+      bg: '#000000', bg2: '#0a0a0a', sidebar: '#050505',
+      text: '#e2e8f0', text2: '#64748b', border: '#1a1a1a',
+      accent: '#7c3aed', accentText: '#ffffff',
+    },
+    'forest': {
+      bg: '#0d1f0d', bg2: '#132613', sidebar: '#081508',
+      text: '#d1fae5', text2: '#4ade80', border: '#1a3a1a',
+      accent: '#16a34a', accentText: '#ffffff',
+    },
+    'aurora': {
+      bg: '#0f0e17', bg2: '#1a1830', sidebar: '#0a0912',
+      text: '#fffffe', text2: '#9d8ec7', border: '#2d2b4e',
+      accent: '#c77dff', accentText: '#0f0e17',
+    },
+    'light': {
+      bg: '#f8fafd', bg2: '#ffffff', sidebar: '#f0f4f9',
+      text: '#1f1f1f', text2: '#5f6368', border: '#e0e0e0',
+      accent: '#0b57d0', accentText: '#ffffff',
+    },
+  }
+
+  function applyTheme(themeName) {
+    const t = THEME_STYLES[themeName]
+    if (!t) return
+
+    const styleId = 'getools-theme-style'
+    let el = document.getElementById(styleId)
+    if (!el) {
+      el = document.createElement('style')
+      el.id = styleId
+      document.head.appendChild(el)
+    }
+
+    el.textContent = `
+      /* GeTools Theme: ${themeName} */
+
+      /* ── Переопределяем ВСЕ цветовые CSS переменные Gemini на :root ──
+         Gemini использует --mat-sys-*, --gem-sys-color-*, --mdc-*
+         Переопределяя их здесь мы красим всё сразу без точечных селекторов */
+      :root, html, body {
+        /* Angular Material system tokens */
+        --mat-sys-background: ${t.bg} !important;
+        --mat-sys-surface: ${t.bg2} !important;
+        --mat-sys-surface-bright: ${t.bg2} !important;
+        --mat-sys-surface-dim: ${t.bg} !important;
+        --mat-sys-surface-container: ${t.bg2} !important;
+        --mat-sys-surface-container-low: ${t.bg} !important;
+        --mat-sys-surface-container-lowest: ${t.bg} !important;
+        --mat-sys-surface-container-high: ${t.bg2} !important;
+        --mat-sys-surface-container-highest: ${t.bg2} !important;
+        --mat-sys-surface-variant: ${t.bg2} !important;
+        --mat-sys-inverse-surface: ${t.text} !important;
+        --mat-sys-on-background: ${t.text} !important;
+        --mat-sys-on-surface: ${t.text} !important;
+        --mat-sys-on-surface-variant: ${t.text2} !important;
+        --mat-sys-outline: ${t.border} !important;
+        --mat-sys-outline-variant: ${t.border} !important;
+        --mat-sys-primary: ${t.accent} !important;
+        --mat-sys-on-primary: ${t.accentText} !important;
+        --mat-sys-primary-container: ${t.bg2} !important;
+        --mat-sys-on-primary-container: ${t.text} !important;
+        --mat-sys-secondary-container: ${t.bg2} !important;
+        --mat-sys-on-secondary-container: ${t.text} !important;
+        --mat-sys-tertiary-container: ${t.bg2} !important;
+
+        /* Sidenav */
+        --mat-sidenav-container-background-color: ${t.sidebar} !important;
+        --mat-sidenav-container-text-color: ${t.text} !important;
+        --mat-sidenav-content-background-color: ${t.bg} !important;
+        --mat-sidenav-scrim-color: rgba(0,0,0,0.6) !important;
+
+        /* Toolbar */
+        --mat-toolbar-container-background-color: ${t.bg} !important;
+        --mat-toolbar-container-text-color: ${t.text} !important;
+
+        /* MDC filled text field (поле ввода) */
+        --mdc-filled-text-field-container-color: ${t.bg2} !important;
+        --mdc-filled-text-field-disabled-container-color: ${t.bg2} !important;
+        --mdc-filled-text-field-input-text-color: ${t.text} !important;
+        --mdc-filled-text-field-label-text-color: ${t.text2} !important;
+        --mdc-filled-text-field-placeholder-text-color: ${t.text2} !important;
+        --mdc-filled-text-field-focus-active-indicator-color: ${t.accent} !important;
+        --mdc-filled-text-field-active-indicator-color: ${t.border} !important;
+
+        /* MDC outlined text field */
+        --mdc-outlined-text-field-container-color: ${t.bg2} !important;
+        --mdc-outlined-text-field-input-text-color: ${t.text} !important;
+        --mdc-outlined-text-field-outline-color: ${t.border} !important;
+
+        /* MDC list */
+        --mdc-list-list-item-container-color: transparent !important;
+        --mdc-list-list-item-label-text-color: ${t.text} !important;
+        --mdc-list-list-item-supporting-text-color: ${t.text2} !important;
+
+        /* MDC menu */
+        --mdc-menu-container-color: ${t.bg2} !important;
+        --mat-menu-container-color: ${t.bg2} !important;
+        --mat-menu-item-label-text-color: ${t.text} !important;
+
+        /* MDC chip */
+        --mdc-chip-elevated-container-color: ${t.bg2} !important;
+        --mdc-chip-label-text-color: ${t.text} !important;
+
+        /* MDC card */
+        --mdc-elevated-card-container-color: ${t.bg2} !important;
+        --mdc-outlined-card-container-color: ${t.bg2} !important;
+
+        /* MDC dialog */
+        --mdc-dialog-container-color: ${t.bg2} !important;
+        --mat-dialog-container-color: ${t.bg2} !important;
+
+        /* MDC icon button */
+        --mdc-icon-button-icon-color: ${t.text} !important;
+
+        /* Gemini собственные токены (gem-sys) */
+        --gem-sys-color--surface: ${t.bg} !important;
+        --gem-sys-color--surface-container: ${t.bg2} !important;
+        --gem-sys-color--surface-container-low: ${t.bg} !important;
+        --gem-sys-color--surface-container-lowest: ${t.bg} !important;
+        --gem-sys-color--surface-container-high: ${t.bg2} !important;
+        --gem-sys-color--surface-container-highest: ${t.bg2} !important;
+        --gem-sys-color--surface-variant: ${t.bg2} !important;
+        --gem-sys-color--surface-bright: ${t.bg2} !important;
+        --gem-sys-color--surface-dim: ${t.bg} !important;
+        --gem-sys-color--on-surface: ${t.text} !important;
+        --gem-sys-color--on-surface-variant: ${t.text2} !important;
+        --gem-sys-color--background: ${t.bg} !important;
+        --gem-sys-color--on-background: ${t.text} !important;
+        --gem-sys-color--outline: ${t.border} !important;
+        --gem-sys-color--outline-variant: ${t.border} !important;
+        --gem-sys-color--primary: ${t.accent} !important;
+        --gem-sys-color--on-primary: ${t.accentText} !important;
+        --gem-sys-color--primary-container: ${t.bg2} !important;
+        --gem-sys-color--on-primary-container: ${t.text} !important;
+        --gem-sys-color--secondary-container: ${t.bg2} !important;
+        --gem-sys-color--on-secondary-container: ${t.text} !important;
+
+        /* Bard synthetic переменные — именно они управляют фоном чата */
+        --bard-color-synthetic--chat-window-surface: ${t.bg} !important;
+        --bard-color-synthetic--chat-window-surface-container: ${t.bg2} !important;
+        --bard-color-synthetic--chat-window-surface-container-low: ${t.bg} !important;
+        --bard-color-synthetic--chat-window-surface-container-high: ${t.bg2} !important;
+        --bard-color-synthetic--chat-window-surface-container-highest: ${t.bg2} !important;
+        --bard-color-synthetic--mat-card-background: ${t.bg2} !important;
+
+        /* Bard color tokens */
+        --bard-color-neutral-90: ${t.bg2} !important;
+        --bard-color-neutral-95: ${t.bg} !important;
+        --bard-color-neutral-96: ${t.bg} !important;
+        --bard-color-footer-background: ${t.bg} !important;
+        --bard-color-sidenav-background-desktop: ${t.sidebar} !important;
+        --bard-color-sidenav-background-mobile: ${t.sidebar} !important;
+        --bard-color-mode-switcher-container: ${t.bg2} !important;
+        --bard-color-mode-switcher-slider: ${t.bg2} !important;
+        --bard-color-surface-tint: ${t.accent} !important;
+        --bard-color-surface-dim-tmp: ${t.bg} !important;
+      }
+
+      /* ── Fallback: прямые фоны для элементов которые игнорируют переменные ── */
+      html, body, .mat-app-background, bard-app {
+        background-color: ${t.bg} !important;
+        color: ${t.text} !important;
+      }
+
+      /* ── Текст ответов ── */
+      model-response p, model-response li,
+      model-response h1, model-response h2, model-response h3, model-response h4,
+      message-content p, message-content li {
+        color: ${t.text} !important;
+      }
+
+      /* ── Код ── */
+      code, pre {
+        background-color: ${t.bg2} !important;
+        color: ${t.text2} !important;
+        border: 1px solid ${t.border} !important;
+      }
+
+      /* ── Кнопки быстрых действий ── */
+      .card.card-zero-state, button.card-zero-state {
+        background-color: ${t.bg2} !important;
+        color: ${t.text} !important;
+      }
+      .card-zero-state .card-label { color: ${t.text} !important; }
+
+      /* ── Скроллбар ── */
+      ::-webkit-scrollbar-track { background: ${t.bg} !important; }
+      ::-webkit-scrollbar-thumb { background: ${t.border} !important; border-radius: 4px !important; }
+      ::-webkit-scrollbar-thumb:hover { background: ${t.text2} !important; }
+
+      /* ── Выделение ── */
+      ::selection { background: ${t.accent}44 !important; }
+    `
+
+    console.log(`[GeTools] Тема применена: ${themeName}`)
+
+    // MutationObserver — красим новые элементы по мере появления
+    // Особенно важно для Shadow DOM хостов которые Angular создаёт динамически
+    if (window.__getoolsThemeObserver) {
+      window.__getoolsThemeObserver.disconnect()
+    }
+
+    function paintElement(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return
+      const tag = el.tagName?.toLowerCase()
+      // Красим только известные контейнеры Gemini
+      const bgTags = ['bard-sidenav', 'chat-window', 'ms-chat-turn', 'model-response',
+        'message-content', 'bard-app', 'conversation-container']
+      if (bgTags.includes(tag)) {
+        el.style.setProperty('background-color', t.bg, 'important')
+      }
+    }
+
+    window.__getoolsThemeObserver = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          paintElement(node)
+        }
+      }
+    })
+    window.__getoolsThemeObserver.observe(document.body, { childList: true, subtree: true })
+  }
+
+  // Применяем тему при старте
+  const INITIAL_THEME = window.__geminiAgentTheme || 'deep-ocean'
+  // Ждём немного чтобы Angular успел инициализироваться
+  setTimeout(() => applyTheme(INITIAL_THEME), 500)
+
+  // Экспортируем для смены темы из IPC
+  window.__getoolsApplyTheme = applyTheme
   const LANG = (window.__geminiAgentLang === 'en') ? 'en' : 'ru'
 
   const TRANSLATIONS = {
@@ -223,7 +468,7 @@
     details.open = true
 
     const summary = document.createElement('summary')
-    summary.textContent = 'Раздумия...'
+    summary.textContent = t('thinkingTitleStreaming')
 
     const pre = document.createElement('pre')
     pre.textContent = ''
@@ -243,7 +488,7 @@
   function utFinalizeDetails() {
     if (!utFetchDetailsEl) return
     const summary = utFetchDetailsEl.querySelector('summary')
-    if (summary) summary.textContent = 'Раздумия'
+    if (summary) summary.textContent = t('thinkingTitle')
     utFetchDetailsEl.open = false
     utFetchDetailsEl = null
     utFetchPreEl = null
@@ -338,7 +583,7 @@
     console.log('[UT] chunk, phase:', utFetchPhase, 'accum len:', utFetchAccum.length)
     // Ищем открывающий маркер
     if (utFetchPhase === 'idle') {
-      const openMatch = utFetchAccum.match(/#+\s*Анализ\b/i)
+      const openMatch = utFetchAccum.match(/#+\s*(?:Анализ|Analysis)\b/i)
       if (!openMatch) return
 
       utFetchPhase = 'think'
@@ -363,7 +608,7 @@
 
     // Ищем закрывающий маркер
     if (utFetchPhase === 'think') {
-      const closeMatch = utFetchAccum.match(/#+\s*Финальный\s+ответ\b/i)
+      const closeMatch = utFetchAccum.match(/#+\s*(?:Финальный\s+ответ|Final\s+answer)\b/i)
       if (closeMatch) {
         // Всё до маркера — раздумия
         const thinkPart = utFetchAccum.slice(0, closeMatch.index).trim()
@@ -2753,6 +2998,8 @@
       Object.keys(localStorage)
         .filter(k => k.startsWith('getools_prompts_done:') || k.startsWith('getools_prompts_added_count:'))
         .forEach(k => localStorage.removeItem(k))
+      // Помечаем что это ручной запуск — игнорирует fresh-режим
+      sessionStorage.setItem('getools_setup_force', '1')
       overlay.style.setProperty('display', 'none', 'important')
       showSetupScreen(t('setupTitle'), t('setupSubtitle'))
       setTimeout(() => {
@@ -3083,7 +3330,7 @@
       iconEl.setAttribute('role', 'img')
       iconEl.setAttribute('aria-hidden', 'true')
       iconEl.setAttribute('matlistitemicon', '')
-      iconEl.className = 'mat-icon notranslate mat-mdc-list-item-icon menu-icon gds-icon-l gem-menu-item-icon google-symbols mat-ligature-font mat-icon-no-color mdc-list-item__start'
+      iconEl.className = 'mat-icon notranslate mat-mdc-list-item-icon menu-icon gds-icon-l gem-menu-item-icon google-symbols mat-icon-no-color mdc-list-item__start'
       btn.appendChild(iconEl)
     }
     iconEl.setAttribute('data-mat-icon-name', icon)
@@ -3230,6 +3477,69 @@
       },
     })
     insertIntoToolbox(btn)
+  }
+
+  // ── Кнопка настроек в левом сайдбаре ────────────────────────────────────────
+
+  function createSidebarSettingsButton() {
+    if (!window.electronAgent?.openSettings) return
+    if (document.getElementById('getools-sidebar-settings')) return
+
+    // Ищем пункт «Настройки и справка» в сайдбаре
+    const settingsLink = [...document.querySelectorAll('a, button, [role="button"]')].find(el => {
+      const text = (el.textContent || '').trim()
+      const label = (el.getAttribute('aria-label') || '').trim()
+      return /настройки и справка|settings.*help|help.*settings/i.test(text + ' ' + label)
+    })
+
+    if (!settingsLink) return
+
+    // Клонируем весь родительский элемент — так получаем точно такую же структуру
+    const parent = settingsLink.closest('li, [role="listitem"]') || settingsLink.parentElement
+    if (!parent || !parent.parentElement) return
+
+    const clone = parent.cloneNode(true)
+    clone.id = 'getools-sidebar-settings'
+
+    // Меняем иконку
+    const iconEl = clone.querySelector('mat-icon, .mat-icon')
+    if (iconEl) {
+      iconEl.textContent = 'settings'
+      iconEl.setAttribute('data-mat-icon-name', 'settings')
+      iconEl.setAttribute('fonticon', 'settings')
+      // Убираем mat-ligature-font чтобы не было двойной иконки
+      iconEl.classList.remove('mat-ligature-font')
+    }
+
+    // Меняем текст — ищем текстовый узел или span с текстом
+    const textEls = [...clone.querySelectorAll('span, div')].filter(el =>
+      el.children.length === 0 && (el.textContent || '').trim().length > 2
+    )
+    if (textEls.length > 0) {
+      textEls[0].textContent = LANG === 'en' ? 'GeTools Settings' : 'Настройки GeTools'
+    }
+
+    // Убираем все обработчики клика через замену на новый элемент
+    const newClone = clone.cloneNode(true)
+    newClone.id = 'getools-sidebar-settings'
+
+    // Вешаем клик на весь элемент
+    newClone.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      window.electronAgent.openSettings()
+    })
+
+    // Также на все дочерние кнопки/ссылки
+    newClone.querySelectorAll('a, button').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.electronAgent.openSettings()
+      })
+    })
+
+    parent.parentElement.insertBefore(newClone, parent)
   }
 
   function isVisibleElement(el) {
@@ -3385,6 +3695,10 @@
           if (!toolbox.querySelector('#gemini-agent-ultrathink')) createUltraThinkButton()
           if (!toolbox.querySelector('#gemini-agent-cwd')) createCwdButton()
           if (!toolbox.querySelector('#gemini-agent-rollback')) createRollbackButton()
+        }
+        // Кнопка настроек в сайдбаре
+        if (!document.getElementById('getools-sidebar-settings')) {
+          createSidebarSettingsButton()
         }
       } finally {
         uiObserverRunning = false
@@ -3633,7 +3947,8 @@
     let current = null
 
     for (const line of lines) {
-      if (/^[а-яёa-z\d]+\s+промпт\s*:/i.test(line.trim())) {
+      // Поддерживаем оба языка: "Первый промпт:" и "First prompt:"
+      if (/^[а-яёa-z\d]+\s+(?:промпт|prompt)\s*:/i.test(line.trim())) {
         if (current !== null) prompts.push(current.trim())
         current = ''
       } else if (current !== null) {
@@ -3644,157 +3959,287 @@
     return prompts.filter(Boolean)
   }
 
-  async function setupSavedInfoPrompt() {
+  async function setupSavedInfoPrompt({ force = false } = {}) {
     if (!AGENT_PROMPT) return false
+
+    const isForced = force || sessionStorage.getItem('getools_setup_force') === '1'
+    if (window.__geminiAgentFreshMode && !isForced) return false
+    if (isForced) sessionStorage.removeItem('getools_setup_force')
 
     const setupUrl = 'https://gemini.google.com/saved-info'
 
-    // Сбрасываем старый формат ключа (миграция)
-    Object.keys(localStorage)
-      .filter(k => k.startsWith('gemini_agent_saved_info_prompt:'))
-      .forEach(k => localStorage.removeItem(k))
-
-    // Читаем prompts.txt через electronAgent (с учётом языка)
+    // Загружаем промпты
     let prompts = []
     if (window.electronAgent?.readFile && window.__geminiAgentAppPath) {
       const appPath = window.__geminiAgentAppPath
-      const candidates = [
-        `${appPath}\\prompts.${LANG}.txt`,
-        `${appPath}\\prompts.txt`,
-      ]
-      for (const filePath of candidates) {
+      for (const filePath of [`${appPath}\\prompts.${LANG}.txt`, `${appPath}\\prompts.txt`]) {
         try {
           const result = await window.electronAgent.readFile(filePath)
           if (result?.success && result.content) {
             prompts = parsePromptsFile(result.content)
-            console.log(`[Agent] Загружено промптов из ${filePath}:`, prompts.length)
+            console.log(`[Agent] Загружено промптов:`, prompts.length)
             break
           }
-        } catch (e) {
-          console.warn(`[Agent] Не удалось прочитать ${filePath}:`, e)
-        }
+        } catch (_) {}
       }
     }
-    if (!prompts.length) prompts = [SAVED_INFO_PROMPT]
+    if (!prompts.length) {
+      console.warn('[Agent] prompts.txt не найден, используем встроенный промпт')
+      prompts = [SAVED_INFO_PROMPT]
+    }
 
-    // Добавляем промпты из установленных плагинов
     if (window.electronAgent?.listPlugins) {
       try {
         const res = await window.electronAgent.listPlugins()
-        if (res?.success && res.plugins?.length) {
-          for (const plugin of res.plugins) {
-            if (plugin.enabled && plugin.prompt && typeof plugin.prompt === 'string' && plugin.prompt.trim()) {
-              prompts.push(plugin.prompt.trim())
-              console.log(`[Agent] Промпт плагина "${plugin.name || plugin.id}" добавлен`)
-            }
+        if (res?.success) {
+          for (const p of (res.plugins || [])) {
+            if (p.enabled && p.prompt?.trim()) prompts.push(p.prompt.trim())
           }
         }
-      } catch (e) {
-        console.warn('[Agent] Не удалось загрузить промпты плагинов:', e)
-      }
+      } catch (_) {}
     }
-    const doneKey = 'getools_prompts_done:' + hashText(prompts.join('|'))
-    const addedKey = 'getools_prompts_added_count:' + hashText(prompts.join('|'))
 
-    // Все промпты уже добавлены
-    if (localStorage.getItem(doneKey) === 'done') return false
+    const promptsHash = hashText([...prompts].sort().join('|'))
+    const doneKey = 'getools_prompts_done:' + promptsHash
 
-    // Не на странице saved-info — редиректим
+    if (localStorage.getItem(doneKey) === 'done') {
+      console.log('[Agent] Промпты уже настроены')
+      localStorage.removeItem('getools_setup_pending')
+      return false
+    }
+
+    // Если не на saved-info — ставим pending флаг и редиректим
     if (!location.href.startsWith(setupUrl)) {
+      localStorage.setItem('getools_setup_pending', '1')
       showSetupScreen(t('setupTitle'), t('setupSubtitle'))
       setTimeout(() => { location.href = setupUrl }, 400)
       return true
     }
 
-    let addedCount = parseInt(localStorage.getItem(addedKey) || '0', 10)
+    // Мы на saved-info — добавляем промпты
+    localStorage.removeItem('getools_setup_pending')
+    console.log(`[Agent] Начинаю добавление ${prompts.length} промптов`)
+    showSetupScreen(`${t('setupTitle')} (0/${prompts.length})`, t('setupSubtitle'))
+
+    let addedCount = 0
+
+    for (let pi = 0; pi < prompts.length; pi++) {
+      const promptToAdd = prompts[pi]
+      console.log(`[Agent] Добавляю промпт ${pi + 1}/${prompts.length}`)
+      showSetupScreen(`${t('setupTitle')} (${pi + 1}/${prompts.length})`, t('setupSubtitle'))
+
+      let addButton = null
+      for (let attempt = 0; attempt < 30; attempt++) {
+        addButton = [...document.querySelectorAll('button')].find(b => {
+          const txt = (b.textContent || '').trim()
+          return /^add$/i.test(txt) || /^добавить$/i.test(txt)
+        })
+        if (addButton) { addButton.click(); break }
+        await sleep(500)
+      }
+
+      if (!addButton) {
+        console.warn(`[Agent] Кнопка "Добавить" не найдена для промпта ${pi + 1}`)
+        break
+      }
+
+      await sleep(2000)
+
+      let inserted = false
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const input = getSavedInfoInput()
+        if (input) {
+          await pasteNativeValue(input, promptToAdd)
+          await sleep(400)
+          if (!inputContains(input, promptToAdd)) {
+            await pasteNativeValue(input, promptToAdd)
+            await sleep(400)
+          }
+
+          const saveButton = [...document.querySelectorAll('button')].find(b => {
+            if (b.closest('mat-slide-toggle, [role="switch"], .mdc-switch')) return false
+            if (b.getAttribute('role') === 'switch') return false
+            const txt = (b.textContent || '').replace(/\s+/g, ' ').trim()
+            const label = (b.getAttribute('aria-label') || '').trim()
+            return /^(save|сохранить|сохранить изменения|отправить|submit)$/i.test(txt)
+              || /^(save|сохранить|отправить)$/i.test(label)
+          })
+
+          if (!saveButton) {
+            console.log(`[Agent] Промпт ${pi + 1}: Save не найдена. Кнопки:`,
+              JSON.stringify([...document.querySelectorAll('button')].map(b => ({
+                t: (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+                l: b.getAttribute('aria-label') || '',
+              })))
+            )
+          }
+
+          if (saveButton && !saveButton.disabled && inputContains(input, promptToAdd)) {
+            saveButton.click()
+            addedCount++
+            console.log(`[Agent] Промпт ${pi + 1}/${prompts.length} сохранён`)
+            await sleep(5000)
+            inserted = true
+            break
+          }
+        }
+        await sleep(500)
+      }
+
+      if (!inserted) {
+        console.warn(`[Agent] Не удалось добавить промпт ${pi + 1}`)
+        break
+      }
+    }
 
     if (addedCount >= prompts.length) {
       localStorage.setItem(doneKey, 'done')
-      setTimeout(() => { location.href = 'https://gemini.google.com' }, 300)
+      showSetupScreen(t('setupDoneTitle'), t('setupDoneSubtitle'))
+      setTimeout(() => { location.href = 'https://gemini.google.com' }, 1200)
       return true
     }
 
-    const promptToAdd = prompts[addedCount]
-    console.log(`[Agent] Добавляю промпт ${addedCount + 1}/${prompts.length}`)
-    showSetupScreen(
-      `${t('setupTitle')} (${addedCount + 1}/${prompts.length})`,
-      t('setupSubtitle')
-    )
-
-    // Ждём появления кнопки "Добавить"
-    let addButton = null
-    for (let attempt = 0; attempt < 30; attempt++) {
-      addButton = findButtonByText(/^add$|^добавить$/i)
-        || [...document.querySelectorAll('button')].find(b => {
-          const t = (b.textContent || '').trim()
-          return /^add$/i.test(t) || /^добавить$/i.test(t)
-        })
-      if (addButton) { addButton.click(); break }
-      await sleep(500)
-    }
-
-    await sleep(1500)
-
-    // Ждём появления textarea/input для ввода промпта
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const input = getSavedInfoInput()
-      if (input) {
-        await pasteNativeValue(input, promptToAdd)
-        await sleep(400)
-
-        if (!inputContains(input, promptToAdd)) {
-          await pasteNativeValue(input, promptToAdd)
-          await sleep(400)
-        }
-
-        // Ищем кнопку сохранения — строго по тексту "Save" / "Сохранить" / "Отправить"
-        // Исключаем toggle/switch элементы
-        const saveButton = [...document.querySelectorAll('button')].find(b => {
-          if (b.closest('mat-slide-toggle, [role="switch"], .mdc-switch')) return false
-          if (b.getAttribute('role') === 'switch') return false
-          const t = (b.textContent || '').replace(/\s+/g, ' ').trim()
-          const label = (b.getAttribute('aria-label') || '').trim()
-          return /^(save|сохранить|сохранить изменения|отправить|submit)$/i.test(t)
-            || /^(save|сохранить|отправить)$/i.test(label)
-        })
-
-        console.log('[Agent] Кнопка сохранения:', saveButton?.textContent?.trim(), '| disabled:', saveButton?.disabled)
-
-        if (saveButton && !saveButton.disabled && inputContains(input, promptToAdd)) {
-          saveButton.click()
-          addedCount++
-          localStorage.setItem(addedKey, String(addedCount))
-          console.log(`[Agent] Промпт ${addedCount}/${prompts.length} сохранён`)
-          await sleep(5000)
-
-          if (addedCount >= prompts.length) {
-            localStorage.setItem(doneKey, 'done')
-            showSetupScreen(t('setupDoneTitle'), t('setupDoneSubtitle'))
-            setTimeout(() => { location.href = 'https://gemini.google.com' }, 1200)
-          } else {
-            setTimeout(() => { location.reload() }, 800)
-          }
-          return true
-        }
-      }
-      await sleep(500)
-    }
-
-    sessionStorage.removeItem('getools_prompts_redirecting')
-    return false
+    console.warn(`[Agent] Добавлено ${addedCount}/${prompts.length} промптов`)
+    return addedCount > 0
   }
 
   // Экспортируем для вызова после установки плагина
-  window.getools._rerunSetup = () => {
-    // Просто запускаем setupSavedInfoPrompt — если появились новые промпты от плагинов,
-    // хеш doneKey изменится и процесс запустится автоматически
-    setupSavedInfoPrompt()
+  window.getools._rerunSetup = () => setupSavedInfoPrompt({ force: true })
+
+  // ── Плашка «Настроить промпты» ────────────────────────────────────────────
+
+  async function checkPromptsNeeded() {
+    if (!AGENT_PROMPT || window.__geminiAgentFreshMode) return false
+    const url = location.href
+    const isGeminiMain = url.startsWith('https://gemini.google.com/app')
+      || url === 'https://gemini.google.com/'
+      || /^https:\/\/gemini\.google\.com\/\?/.test(url)
+    if (!isGeminiMain) return false
+
+    let prompts = []
+    if (window.electronAgent?.readFile && window.__geminiAgentAppPath) {
+      const appPath = window.__geminiAgentAppPath
+      for (const filePath of [`${appPath}\\prompts.${LANG}.txt`, `${appPath}\\prompts.txt`]) {
+        try {
+          const result = await window.electronAgent.readFile(filePath)
+          if (result?.success && result.content) { prompts = parsePromptsFile(result.content); break }
+        } catch (_) {}
+      }
+    }
+    if (!prompts.length) prompts = [SAVED_INFO_PROMPT]
+    if (window.electronAgent?.listPlugins) {
+      try {
+        const res = await window.electronAgent.listPlugins()
+        if (res?.success) for (const p of (res.plugins || [])) {
+          if (p.enabled && p.prompt?.trim()) prompts.push(p.prompt.trim())
+        }
+      } catch (_) {}
+    }
+    const doneKey = 'getools_prompts_done:' + hashText([...prompts].sort().join('|'))
+    return localStorage.getItem(doneKey) !== 'done'
   }
 
-  setTimeout(setupSavedInfoPrompt, 1000)
+  function showPromptsBanner() {
+    if (document.getElementById('getools-prompts-banner')) return
+    const isEn = LANG === 'en'
+
+    if (!document.getElementById('getools-banner-style')) {
+      const s = document.createElement('style')
+      s.id = 'getools-banner-style'
+      s.textContent = `
+        @keyframes getools-banner-in { from{opacity:0} to{opacity:1} }
+        @keyframes getools-banner-up { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+        #getools-prompts-banner {
+          position:fixed !important; inset:0 !important; z-index:2147483646 !important;
+          display:flex !important; flex-direction:column !important;
+          align-items:center !important; justify-content:center !important;
+          background:#0d0d0e !important;
+          animation:getools-banner-in 0.35s ease both !important;
+          font-family:'Google Sans','Segoe UI',system-ui,sans-serif !important;
+          pointer-events:all !important;
+        }
+        #getools-prompts-banner * { box-sizing:border-box; }
+        #getools-prompts-inner {
+          display:flex; flex-direction:column; align-items:center; text-align:center;
+          max-width:480px; padding:0 32px;
+          animation:getools-banner-up 0.4s cubic-bezier(0.4,0,0.2,1) 0.1s both;
+        }
+        #getools-prompts-banner .gtp-logo { width:56px;height:56px;object-fit:contain;margin-bottom:32px;opacity:0.9; }
+        #getools-prompts-banner .gtp-title { font-size:24px;font-weight:500;color:#e3e3e3;letter-spacing:-0.2px;margin-bottom:12px;line-height:1.25; }
+        #getools-prompts-banner .gtp-sub { font-size:14px;color:#6e7681;line-height:1.6;margin-bottom:36px;max-width:360px; }
+        #getools-prompts-banner .gtp-btn {
+          padding:13px 36px; background:#e3e3e3; color:#0d0d0e; border:none;
+          border-radius:24px; font-size:15px; font-weight:600; font-family:inherit;
+          cursor:pointer; transition:opacity 0.15s,transform 0.1s; letter-spacing:0.1px;
+        }
+        #getools-prompts-banner .gtp-btn:hover { opacity:0.88; }
+        #getools-prompts-banner .gtp-btn:active { transform:scale(0.97); }
+        #getools-prompts-banner .gtp-note { margin-top:20px;font-size:12px;color:#3d4147; }
+      `
+      document.head.appendChild(s)
+    }
+
+    const banner = document.createElement('div')
+    banner.id = 'getools-prompts-banner'
+    const inner = document.createElement('div')
+    inner.id = 'getools-prompts-inner'
+
+    const logo = Object.assign(document.createElement('img'), {
+      className: 'gtp-logo', src: window.__geminiAgentLogoUrl || '', alt: 'GeTools', draggable: false,
+    })
+    const title = Object.assign(document.createElement('div'), {
+      className: 'gtp-title',
+      textContent: isEn ? 'One-time setup required' : 'Требуется одноразовая настройка',
+    })
+    const sub = Object.assign(document.createElement('div'), {
+      className: 'gtp-sub',
+      textContent: isEn
+        ? 'GeTools needs to add agent instructions to your Gemini personal context. This happens once and takes about a minute.'
+        : 'GeTools добавит инструкции агента в персональный контекст Gemini. Это происходит один раз и занимает около минуты.',
+    })
+    const btn = Object.assign(document.createElement('button'), {
+      className: 'gtp-btn',
+      textContent: isEn ? 'Set up now' : 'Настроить сейчас',
+    })
+    const note = Object.assign(document.createElement('div'), {
+      className: 'gtp-note',
+      textContent: isEn ? 'Without this, agent commands will not work' : 'Без этого команды агента работать не будут',
+    })
+
+    btn.onclick = () => { banner.remove(); setupSavedInfoPrompt({ force: true }) }
+    inner.append(logo, title, sub, btn, note)
+    banner.appendChild(inner)
+    document.body.appendChild(banner)
+  }
+
+  // При загрузке страницы — проверяем нужно ли что-то делать
+  setTimeout(async () => {
+    const url = location.href
+
+    // На saved-info: если стоит pending флаг — запускаем setup
+    if (url.startsWith('https://gemini.google.com/saved-info')) {
+      if (localStorage.getItem('getools_setup_pending') === '1') {
+        console.log('[Agent] saved-info: pending флаг найден, запускаем setup')
+        setupSavedInfoPrompt({ force: true })
+      }
+      return
+    }
+
+    // На главной: показываем баннер если промпты не настроены
+    const needed = await checkPromptsNeeded()
+    if (needed) showPromptsBanner()
+  }, 2000)
 
   // Открываем оверлей плагинов по событию от preload
   window.addEventListener('getools:open-plugins', () => openPluginsOverlay())
+
+  // Переустановка промптов из окна preferences
+  window.addEventListener('getools:reset-prompts', () => {
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('getools_prompts_done:') || k.startsWith('getools_setup_pending'))
+      .forEach(k => localStorage.removeItem(k))
+    setupSavedInfoPrompt({ force: true })
+  })
 
   console.log('[Gemini Agent] Готов')
 })()

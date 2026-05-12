@@ -3,6 +3,24 @@ const { exec, execFile } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 
+// ── Fresh mode: должен быть ДО любой инициализации app ──────────────────────
+// npm run fresh передаёт --getools-fresh, мы переключаем userData на .fresh-run
+// app.setPath обязан вызываться до app.whenReady(), иначе не работает
+if (process.argv.includes('--getools-fresh')) {
+  const freshDir = path.join(__dirname, '.fresh-run')
+  // Чистим папку при каждом запуске — гарантируем чистое состояние
+  try {
+    if (fs.existsSync(freshDir)) {
+      fs.rmSync(freshDir, { recursive: true, force: true })
+    }
+    fs.mkdirSync(freshDir, { recursive: true })
+  } catch (e) {
+    console.warn('[GeTools] Fresh mode: не удалось очистить .fresh-run:', e.message)
+  }
+  app.setPath('userData', freshDir)
+  console.log('[GeTools] Fresh mode: userData =', freshDir)
+}
+
 // Включаем WebGPU и аппаратное ускорение
 app.commandLine.appendSwitch('enable-features', 'WebGPU')
 app.commandLine.appendSwitch('enable-unsafe-webgpu')
@@ -53,6 +71,162 @@ function getLanguage() {
 function setLanguage(lang) {
   if (lang !== 'ru' && lang !== 'en') return
   saveSettings({ language: lang })
+}
+
+// ─── Темы ─────────────────────────────────────────────────────────────────────
+
+const VALID_THEMES = ['deep-ocean', 'coffee', 'midnight', 'forest', 'aurora', 'light']
+
+function getTheme() {
+  const settings = loadSettings()
+  const theme = settings.theme
+  if (VALID_THEMES.includes(theme)) return theme
+  return 'deep-ocean'
+}
+
+function setTheme(theme) {
+  if (!VALID_THEMES.includes(theme)) return
+  saveSettings({ theme })
+}
+
+// CSS для каждой темы — применяется через webContents.insertCSS в BrowserView Gemini
+// Правило: красим только фоны контейнеров. НЕ трогаем border-radius, color на div/span.
+// Поле ввода красим через внутренний div[contenteditable], не через обёртку.
+const THEME_CSS = {
+  'deep-ocean': `
+    body, .mat-app-background, bard-sidenav, .conversation-container,
+    chat-window, ms-chat-turn, .response-container,
+    .side-navigation-panel, bard-sidenav-content, .sidenav-container {
+      background-color: #0d1117 !important;
+    }
+    .mat-toolbar, .app-bar, header {
+      background-color: #0d1117 !important;
+      border-bottom: 1px solid #30363d !important;
+    }
+    ::-webkit-scrollbar-thumb { background: #30363d !important; }
+  `,
+
+  'coffee': `
+    body, .mat-app-background, bard-sidenav, .conversation-container,
+    chat-window, ms-chat-turn, .response-container {
+      background-color: #1a1208 !important;
+    }
+    .side-navigation-panel, bard-sidenav-content, .sidenav-container {
+      background-color: #120d05 !important;
+    }
+    .mat-toolbar, .app-bar, header {
+      background-color: #120d05 !important;
+      border-bottom: 1px solid #3d2b14 !important;
+    }
+    model-response p, model-response li,
+    model-response h1, model-response h2, model-response h3, model-response h4,
+    message-content p, message-content li { color: #e8d5b0 !important; }
+    code, pre { background-color: #2a1f0f !important; color: #f0c070 !important; }
+    ::-webkit-scrollbar-thumb { background: #5c3d1e !important; }
+    ::selection { background: rgba(200,169,110,0.3) !important; }
+  `,
+
+  'midnight': `
+    body, .mat-app-background, bard-sidenav, .conversation-container,
+    chat-window, ms-chat-turn, .response-container {
+      background-color: #000000 !important;
+    }
+    .side-navigation-panel, bard-sidenav-content, .sidenav-container {
+      background-color: #050505 !important;
+    }
+    .mat-toolbar, .app-bar, header {
+      background-color: #000000 !important;
+      border-bottom: 1px solid #1a1a1a !important;
+    }
+    model-response p, model-response li,
+    model-response h1, model-response h2, model-response h3, model-response h4,
+    message-content p, message-content li { color: #e2e8f0 !important; }
+    code, pre { background-color: #0f0f0f !important; color: #a78bfa !important; }
+    ::-webkit-scrollbar-thumb { background: #2d2d2d !important; }
+    ::selection { background: rgba(124,58,237,0.35) !important; }
+  `,
+
+  'forest': `
+    body, .mat-app-background, bard-sidenav, .conversation-container,
+    chat-window, ms-chat-turn, .response-container {
+      background-color: #0d1f0d !important;
+    }
+    .side-navigation-panel, bard-sidenav-content, .sidenav-container {
+      background-color: #081508 !important;
+    }
+    .mat-toolbar, .app-bar, header {
+      background-color: #081508 !important;
+      border-bottom: 1px solid #1a3a1a !important;
+    }
+    model-response p, model-response li,
+    model-response h1, model-response h2, model-response h3, model-response h4,
+    message-content p, message-content li { color: #d1fae5 !important; }
+    code, pre { background-color: #0a1a0a !important; color: #86efac !important; }
+    ::-webkit-scrollbar-thumb { background: #1a4a1a !important; }
+    ::selection { background: rgba(34,197,94,0.3) !important; }
+  `,
+
+  'aurora': `
+    body, .mat-app-background, bard-sidenav, .conversation-container,
+    chat-window, ms-chat-turn, .response-container {
+      background-color: #0f0e17 !important;
+    }
+    .side-navigation-panel, bard-sidenav-content, .sidenav-container {
+      background-color: #0a0912 !important;
+    }
+    .mat-toolbar, .app-bar, header {
+      background-color: #0a0912 !important;
+      border-bottom: 1px solid #2d2b4e !important;
+    }
+    model-response p, model-response li,
+    model-response h1, model-response h2, model-response h3, model-response h4,
+    message-content p, message-content li { color: #fffffe !important; }
+    code, pre { background-color: #16142a !important; color: #ff6b9d !important; }
+    ::-webkit-scrollbar-thumb { background: #3d3a6e !important; }
+    ::selection { background: rgba(199,125,255,0.3) !important; }
+  `,
+
+  'light': `
+    body, .mat-app-background, bard-sidenav, .conversation-container,
+    chat-window, ms-chat-turn, .response-container {
+      background-color: #f8fafd !important;
+    }
+    .side-navigation-panel, bard-sidenav-content, .sidenav-container {
+      background-color: #f0f4f9 !important;
+    }
+    .mat-toolbar, .app-bar, header {
+      background-color: #ffffff !important;
+      border-bottom: 1px solid #e0e0e0 !important;
+    }
+    model-response p, model-response li,
+    model-response h1, model-response h2, model-response h3, model-response h4,
+    message-content p, message-content li { color: #1f1f1f !important; }
+    code, pre { background-color: #f0f4f9 !important; color: #0b57d0 !important; }
+    ::-webkit-scrollbar-thumb { background: #c4c7c5 !important; }
+    ::selection { background: rgba(11,87,208,0.2) !important; }
+  `,
+}
+
+// Текущий cssKey для возможности удаления предыдущей темы
+let currentThemeCssKey = null
+
+async function applyThemeToGeminiView() {
+  if (!geminiView) return
+  const theme = getTheme()
+  const css = THEME_CSS[theme]
+  if (!css) return
+
+  try {
+    // Удаляем предыдущую тему если есть
+    if (currentThemeCssKey) {
+      try { await geminiView.webContents.removeInsertedCSS(currentThemeCssKey) } catch (_) {}
+      currentThemeCssKey = null
+    }
+    currentThemeCssKey = await geminiView.webContents.insertCSS(css)
+    console.log(`[Theme] Применена тема: ${theme}`)
+  } catch (e) {
+    console.error('[Theme] Ошибка применения темы:', e.message)
+  }
 }
 
 function localizeAgentPrompt(prompt, lang) {
@@ -127,6 +301,47 @@ function loadPluginPage() {
   mainWindow.loadFile(path.join(__dirname, 'pluginPage.html'), { query: { lang } })
 }
 
+let settingsWindow = null
+
+function openSettingsWindow() {
+  // Если окно уже открыто — фокусируем его
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.focus()
+    return
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 520,
+    height: 600,
+    minWidth: 400,
+    minHeight: 500,
+    title: 'GeTools — Настройки',
+    icon: path.join(__dirname, 'logo.ico'),
+    backgroundColor: '#131314',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: true,
+    },
+    autoHideMenuBar: true,
+    resizable: true,
+    frame: false,
+    show: false,
+    parent: mainWindow,
+  })
+
+  settingsWindow.loadFile(path.join(__dirname, 'preferences.html'))
+
+  settingsWindow.once('ready-to-show', () => {
+    settingsWindow.show()
+  })
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null
+  })
+}
+
 function loadGemini() {
   if (geminiView) {
     geminiView.webContents.loadURL('https://gemini.google.com')
@@ -154,10 +369,10 @@ function createWindow() {
     show: false,
   })
 
-  // Основное окно показывает сплэш (с Language Selector если язык не выбран)
+  // При первом запуске — экран настройки. Иначе — сплэш-лоадер.
   const _splashLang = getLanguage()
   if (_splashLang === null) {
-    mainWindow.loadFile(path.join(__dirname, 'splash.html'), { query: { needsLanguageSelection: '1' } })
+    mainWindow.loadFile(path.join(__dirname, 'settings.html'))
   } else {
     mainWindow.loadFile(path.join(__dirname, 'splash.html'))
   }
@@ -251,9 +466,31 @@ function createWindow() {
 
       const lang = getLanguage() || 'ru'
       const localizedPrompt = localizeAgentPrompt(prompt, lang)
+      const isFreshMode = process.argv.includes('--getools-fresh')
+      const isTestPrompts = process.argv.includes('--getools-reset-prompts')
+
+      // В режиме test:prompts — сбрасываем doneKey ДО инжекции агента
+      // чтобы агент стартовал уже с чистым состоянием
+      if (isTestPrompts) {
+        await wc.debugger.sendCommand('Runtime.evaluate', {
+          expression: `
+            (function() {
+              const keys = Object.keys(localStorage).filter(k =>
+                k.startsWith('getools_prompts_done:') ||
+                k.startsWith('getools_prompts_added_count:') ||
+                k === 'getools_setup_running_ts'
+              )
+              keys.forEach(k => localStorage.removeItem(k))
+              sessionStorage.removeItem('getools_setup_running')
+              console.log('[Agent] test:prompts — сброшено ключей:', keys.length)
+            })()
+          `
+        })
+        console.log('[Agent] test:prompts: localStorage промптов сброшен до инжекции')
+      }
 
       await wc.debugger.sendCommand('Runtime.evaluate', {
-        expression: `window.__geminiAgentPrompt = ${JSON.stringify(localizedPrompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\nwindow.__geminiAgentLang = ${JSON.stringify(lang)};\n${script}\n${pluginScripts}`
+        expression: `window.__geminiAgentPrompt = ${JSON.stringify(localizedPrompt)};\nwindow.__geminiAgentAppPath = ${JSON.stringify(__dirname)};\nwindow.__geminiAgentLogoUrl = ${JSON.stringify(logoUrl)};\nwindow.__geminiAgentLang = ${JSON.stringify(lang)};\nwindow.__geminiAgentFreshMode = ${JSON.stringify(isFreshMode)};\nwindow.__geminiAgentTheme = ${JSON.stringify(getTheme())};\n${script}\n${pluginScripts}`
       })
 
       console.log('[Agent] Скрипт внедрён через CDP')
@@ -274,6 +511,8 @@ function createWindow() {
   geminiView.webContents.on('did-finish-load', () => {
     if (!geminiView.webContents.getURL().startsWith('https://gemini.google.com')) return
     injectAgentViaCDP()
+    // Применяем тему после загрузки страницы
+    applyThemeToGeminiView()
   })
 
   geminiView.webContents.on('page-title-updated', (e, title) => {
@@ -460,6 +699,44 @@ ipcMain.handle('settings:getLanguage', () => ({ language: getLanguage() || 'ru' 
 ipcMain.handle('settings:setLanguage', async (event, { lang }) => {
   if (lang !== 'ru' && lang !== 'en') return { success: false, error: 'Invalid language' }
   setLanguage(lang)
+  // Переустанавливаем Accept-Language заголовок и перезагружаем Gemini
+  setupAcceptLanguageHeader(lang)
+  if (geminiView) {
+    geminiView.webContents.reload()
+  }
+  return { success: true }
+})
+
+// ─── Тема ─────────────────────────────────────────────────────────────────────
+
+ipcMain.handle('settings:getTheme', () => ({ theme: getTheme() }))
+
+ipcMain.handle('settings:setTheme', async (event, { theme }) => {
+  if (!VALID_THEMES.includes(theme)) return { success: false, error: 'Invalid theme' }
+  setTheme(theme)
+  // Применяем немедленно через inject.js который уже в странице
+  if (geminiView) {
+    try {
+      await geminiView.webContents.executeJavaScript(
+        `window.__getoolsApplyTheme && window.__getoolsApplyTheme(${JSON.stringify(theme)})`
+      )
+    } catch (_) {}
+    // Также обновляем через insertCSS как fallback
+    await applyThemeToGeminiView()
+  }
+  return { success: true }
+})
+
+ipcMain.handle('app:openSettings', async () => {
+  openSettingsWindow()
+  return { success: true }
+})
+
+ipcMain.handle('settings:reset', async () => {
+  // Сбрасываем язык и тему — следующий запуск покажет экран настроек заново
+  try {
+    saveSettings({ language: null, theme: null })
+  } catch (_) {}
   return { success: true }
 })
 

@@ -27,4 +27,11 @@ contextBridge.exposeInMainWorld('electronAgent', {
   // Язык
   getLanguage: () => ipcRenderer.invoke('settings:getLanguage'),
   setLanguage: (lang) => ipcRenderer.invoke('settings:setLanguage', { lang }),
+  // Тема
+  getTheme: () => ipcRenderer.invoke('settings:getTheme'),
+  setTheme: (theme) => ipcRenderer.invoke('settings:setTheme', { theme }),
+  // Настройки
+  openSettings: () => ipcRenderer.invoke('app:openSettings'),
+  openUrl: (url) => ipcRenderer.invoke('agent:openUrl', { url }),
+  resetSettings: () => ipcRenderer.invoke('settings:reset'),
 })

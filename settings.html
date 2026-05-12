@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>GeTools</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ── Тема применяется через data-theme на <html> ── */
+    :root {
+      --bg:      #131314;
+      --bg2:     #1e1f20;
+      --border:  rgba(255,255,255,0.08);
+      --text:    #e3e3e3;
+      --text2:   #6e7681;
+      --text3:   rgba(255,255,255,0.4);
+      --accent:  #e3e3e3;
+      --btn-bg:  #e3e3e3;
+      --btn-fg:  #131314;
+    }
+
+    [data-theme="deep-ocean"] {
+      --bg:     #0d1117;
+      --bg2:    #161b22;
+      --border: rgba(255,255,255,0.08);
+      --text:   #c9d1d9;
+      --text2:  #6e7681;
+      --text3:  rgba(255,255,255,0.35);
+      --accent: #58a6ff;
+      --btn-bg: #c9d1d9;
+      --btn-fg: #0d1117;
+    }
+    [data-theme="coffee"] {
+      --bg:     #1a1208;
+      --bg2:    #241a0e;
+      --border: rgba(200,169,110,0.15);
+      --text:   #e8d5b0;
+      --text2:  #8b7355;
+      --text3:  rgba(232,213,176,0.35);
+      --accent: #c8a96e;
+      --btn-bg: #c8a96e;
+      --btn-fg: #1a1208;
+    }
+    [data-theme="midnight"] {
+      --bg:     #000000;
+      --bg2:    #0a0a0a;
+      --border: rgba(255,255,255,0.06);
+      --text:   #e2e8f0;
+      --text2:  #64748b;
+      --text3:  rgba(255,255,255,0.3);
+      --accent: #a78bfa;
+      --btn-bg: #e2e8f0;
+      --btn-fg: #000000;
+    }
+    [data-theme="forest"] {
+      --bg:     #0d1f0d;
+      --bg2:    #132613;
+      --border: rgba(34,197,94,0.12);
+      --text:   #d1fae5;
+      --text2:  #4ade80;
+      --text3:  rgba(209,250,229,0.35);
+      --accent: #4ade80;
+      --btn-bg: #d1fae5;
+      --btn-fg: #0d1f0d;
+    }
+    [data-theme="aurora"] {
+      --bg:     #0f0e17;
+      --bg2:    #1a1830;
+      --border: rgba(199,125,255,0.12);
+      --text:   #fffffe;
+      --text2:  #9d8ec7;
+      --text3:  rgba(255,255,254,0.35);
+      --accent: #c77dff;
+      --btn-bg: #fffffe;
+      --btn-fg: #0f0e17;
+    }
+    [data-theme="light"] {
+      --bg:     #f0f4f9;
+      --bg2:    #ffffff;
+      --border: rgba(0,0,0,0.08);
+      --text:   #1f1f1f;
+      --text2:  #5f6368;
+      --text3:  rgba(0,0,0,0.3);
+      --accent: #0b57d0;
+      --btn-bg: #1f1f1f;
+      --btn-fg: #f0f4f9;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Google Sans', 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+      user-select: none;
+      -webkit-app-region: drag;
+      transition: background 0.25s, color 0.25s;
+    }
+
+    .drag-region {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 32px;
+      -webkit-app-region: drag;
+      z-index: 10;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 32px 32px;
+      -webkit-app-region: no-drag;
+    }
+
+    /* ── Step dots ── */
+    .steps {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 48px;
+    }
+    .step-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text3);
+      transition: background 0.3s, width 0.3s;
+    }
+    .step-dot.active {
+      background: var(--text);
+      width: 20px;
+      border-radius: 3px;
+    }
+    .step-dot.done { background: var(--text3); }
+
+    /* ── Content ── */
+    .step-content {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      flex: 1;
+      justify-content: center;
+      animation: stepIn 0.28s cubic-bezier(0.4,0,0.2,1) both;
+    }
+    @keyframes stepIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-logo {
+      width: 64px; height: 64px;
+      object-fit: contain;
+      margin-bottom: 32px;
+      opacity: 0.95;
+    }
+    .step-title {
+      font-size: 26px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.3px;
+      margin-bottom: 10px;
+      line-height: 1.2;
+      transition: color 0.25s;
+    }
+    .step-subtitle {
+      font-size: 14px;
+      color: var(--text2);
+      line-height: 1.6;
+      max-width: 360px;
+      transition: color 0.25s;
+    }
+
+    /* ── Lang options ── */
+    .lang-options {
+      display: flex;
+      gap: 10px;
+      margin-top: 36px;
+    }
+    .lang-option {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 20px 28px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text2);
+      font-size: 15px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      min-width: 120px;
+    }
+    .lang-option .flag { font-size: 28px; line-height: 1; }
+    .lang-option:hover {
+      border-color: var(--text3);
+      color: var(--text);
+      background: rgba(255,255,255,0.04);
+    }
+    .lang-option.selected {
+      border-color: var(--text);
+      color: var(--text);
+      background: rgba(255,255,255,0.06);
+    }
+    [data-theme="light"] .lang-option:hover { background: rgba(0,0,0,0.04); }
+    [data-theme="light"] .lang-option.selected { background: rgba(0,0,0,0.06); }
+
+    /* ── Theme grid ── */
+    .theme-options {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 36px;
+      width: 100%;
+      max-width: 440px;
+    }
+    .theme-option {
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.12s;
+      background: transparent;
+      padding: 0;
+      text-align: left;
+      font-family: inherit;
+    }
+    .theme-option:hover {
+      border-color: rgba(255,255,255,0.22);
+      transform: translateY(-1px);
+    }
+    .theme-option.selected { border-color: var(--text); }
+
+    .theme-swatch {
+      height: 56px;
+      position: relative;
+      overflow: hidden;
+    }
+    .theme-swatch-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 18px;
+    }
+    .theme-swatch-dot {
+      position: absolute;
+      bottom: 8px; right: 10px;
+      width: 28px; height: 8px;
+      border-radius: 4px;
+      opacity: 0.8;
+    }
+    .theme-swatch-dot2 {
+      position: absolute;
+      bottom: 8px; left: 10px;
+      width: 18px; height: 8px;
+      border-radius: 4px;
+      opacity: 0.4;
+    }
+    .theme-name {
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #9aa0a6;
+      transition: color 0.15s;
+    }
+    .theme-option.selected .theme-name { color: #e3e3e3; }
+
+    /* Swatches — фиксированные цвета, не зависят от темы страницы */
+    .swatch-deep-ocean .theme-swatch { background: #0d1117; }
+    .swatch-deep-ocean .theme-swatch-bar { background: #161b22; }
+    .swatch-deep-ocean .theme-swatch-dot { background: #1f6feb; }
+    .swatch-deep-ocean .theme-swatch-dot2 { background: #8b949e; }
+    .swatch-deep-ocean .theme-name { background: #0d1117; color: #8b949e; }
+    .swatch-deep-ocean.selected .theme-name { color: #c9d1d9; }
+
+    .swatch-coffee .theme-swatch { background: #1a1208; }
+    .swatch-coffee .theme-swatch-bar { background: #241a0e; }
+    .swatch-coffee .theme-swatch-dot { background: #c8a96e; }
+    .swatch-coffee .theme-swatch-dot2 { background: #8b7355; }
+    .swatch-coffee .theme-name { background: #1a1208; color: #8b7355; }
+    .swatch-coffee.selected .theme-name { color: #e8d5b0; }
+
+    .swatch-midnight .theme-swatch { background: #000000; }
+    .swatch-midnight .theme-swatch-bar { background: #0a0a0a; }
+    .swatch-midnight .theme-swatch-dot { background: #7c3aed; }
+    .swatch-midnight .theme-swatch-dot2 { background: #4c1d95; }
+    .swatch-midnight .theme-name { background: #000000; color: #64748b; }
+    .swatch-midnight.selected .theme-name { color: #e2e8f0; }
+
+    .swatch-forest .theme-swatch { background: #0d1f0d; }
+    .swatch-forest .theme-swatch-bar { background: #132613; }
+    .swatch-forest .theme-swatch-dot { background: #22c55e; }
+    .swatch-forest .theme-swatch-dot2 { background: #166534; }
+    .swatch-forest .theme-name { background: #0d1f0d; color: #4ade80; }
+    .swatch-forest.selected .theme-name { color: #d1fae5; }
+
+    .swatch-aurora .theme-swatch { background: #0f0e17; }
+    .swatch-aurora .theme-swatch-bar { background: #1a1830; }
+    .swatch-aurora .theme-swatch-dot { background: #ff6b9d; }
+    .swatch-aurora .theme-swatch-dot2 { background: #c77dff; }
+    .swatch-aurora .theme-name { background: #0f0e17; color: #9d8ec7; }
+    .swatch-aurora.selected .theme-name { color: #fffffe; }
+
+    .swatch-light .theme-swatch { background: #f0f4f9; }
+    .swatch-light .theme-swatch-bar { background: #ffffff; }
+    .swatch-light .theme-swatch-dot { background: #0b57d0; }
+    .swatch-light .theme-swatch-dot2 { background: #c4c7c5; }
+    .swatch-light .theme-name { background: #f0f4f9; color: #5f6368; }
+    .swatch-light.selected .theme-name { color: #1f1f1f; }
+
+    /* ── Done ── */
+    .done-icon {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 28px;
+      font-size: 24px;
+      color: var(--text);
+      transition: background 0.25s, color 0.25s;
+    }
+
+    /* ── Bottom nav ── */
+    .bottom {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 32px;
+    }
+
+    /* Левая часть — Назад + Пропустить */
+    .bottom-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn-ghost {
+      padding: 10px 16px;
+      border-radius: 20px;
+      border: none;
+      background: transparent;
+      color: var(--text2);
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .btn-ghost:hover { color: var(--text); }
+    .btn-ghost.hidden { visibility: hidden; pointer-events: none; }
+
+    .btn-next {
+      padding: 11px 28px;
+      border-radius: 20px;
+      border: none;
+      background: var(--btn-bg);
+      color: var(--btn-fg);
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s, background 0.25s, color 0.25s;
+      letter-spacing: 0.1px;
+    }
+    .btn-next:hover { opacity: 0.85; }
+    .btn-next:active { transform: scale(0.97); }
+  </style>
+</head>
+<body>
+  <div class="drag-region"></div>
+
+  <div class="screen">
+    <div class="steps" id="stepDots">
+      <div class="step-dot active"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+    </div>
+
+    <div class="step-content" id="stepContent"></div>
+
+    <div class="bottom">
+      <div class="bottom-left">
+        <button class="btn-ghost hidden" id="btnBack">Назад</button>
+        <button class="btn-ghost" id="btnSkip">Пропустить</button>
+      </div>
+      <button class="btn-next" id="btnNext">Продолжить</button>
+    </div>
+  </div>
+
+  <script>
+    // ── Темы страницы ──────────────────────────────────────────────────────
+    // Применяем тему к самой странице настроек мгновенно
+    function applyPageTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // ── State ──────────────────────────────────────────────────────────────
+    let step = 0
+    let selectedLang = 'ru'
+    let selectedTheme = 'deep-ocean'
+    const TOTAL_STEPS = 3
+
+    // ── i18n ───────────────────────────────────────────────────────────────
+    const T = {
+      ru: {
+        step0Title: 'Добро пожаловать в GeTools',
+        step0Sub: 'Gemini как локальный AI-агент на вашем рабочем столе.\nДавайте настроим всё за минуту.',
+        step1Title: 'Выберите тему',
+        step1Sub: 'Тема применится ко всему интерфейсу Gemini.\nВы видите её прямо сейчас.',
+        step2Title: 'Всё готово',
+        step2Sub: 'GeTools настроен. Можно начинать работу.',
+        back: 'Назад',
+        next: 'Продолжить',
+        start: 'Начать',
+        skip: 'Пропустить',
+        themes: {
+          'deep-ocean': 'Океан',
+          'coffee':     'Кофе',
+          'midnight':   'Полночь',
+          'forest':     'Лес',
+          'aurora':     'Аврора',
+          'light':      'Светлая',
+        },
+      },
+      en: {
+        step0Title: 'Welcome to GeTools',
+        step0Sub: 'Gemini as a local AI agent on your desktop.\nLet\'s set everything up in a minute.',
+        step1Title: 'Choose a theme',
+        step1Sub: 'The theme applies to the entire Gemini interface.\nYou\'re seeing it right now.',
+        step2Title: 'You\'re all set',
+        step2Sub: 'GeTools is configured. Ready to go.',
+        back: 'Back',
+        next: 'Continue',
+        start: 'Get started',
+        skip: 'Skip',
+        themes: {
+          'deep-ocean': 'Ocean',
+          'coffee':     'Coffee',
+          'midnight':   'Midnight',
+          'forest':     'Forest',
+          'aurora':     'Aurora',
+          'light':      'Light',
+        },
+      },
+    }
+
+    function t(key) {
+      return T[selectedLang]?.[key] ?? T.ru[key] ?? key
+    }
+
+    // ── Render ─────────────────────────────────────────────────────────────
+    const THEMES = ['deep-ocean','coffee','midnight','forest','aurora','light']
+
+    function renderStep() {
+      const content  = document.getElementById('stepContent')
+      const btnBack  = document.getElementById('btnBack')
+      const btnSkip  = document.getElementById('btnSkip')
+      const btnNext  = document.getElementById('btnNext')
+
+      // Dots
+      document.querySelectorAll('.step-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === step)
+        dot.classList.toggle('done',   i < step)
+      })
+
+      // Back
+      btnBack.classList.toggle('hidden', step === 0)
+      btnBack.textContent = t('back')
+
+      // Skip — показываем только на шагах 0 и 1, скрываем на финале
+      btnSkip.classList.toggle('hidden', step === TOTAL_STEPS - 1)
+      btnSkip.textContent = t('skip')
+
+      // Next
+      btnNext.textContent = step === TOTAL_STEPS - 1 ? t('start') : t('next')
+
+      // Content — перезапускаем анимацию
+      content.style.animation = 'none'
+      void content.offsetHeight
+      content.style.animation = ''
+
+      if (step === 0) renderLang(content)
+      else if (step === 1) renderTheme(content)
+      else renderDone(content)
+    }
+
+    function renderLang(el) {
+      el.innerHTML = ''
+
+      const logo = Object.assign(document.createElement('img'), {
+        className: 'step-logo', src: 'transparent.png', alt: 'GeTools', draggable: false,
+      })
+
+      const title = Object.assign(document.createElement('div'), {
+        className: 'step-title', id: 'dynTitle',
+      })
+      title.textContent = t('step0Title')
+
+      const sub = Object.assign(document.createElement('div'), {
+        className: 'step-subtitle', id: 'dynSub',
+      })
+      sub.style.whiteSpace = 'pre-line'
+      sub.textContent = t('step0Sub')
+
+      const opts = document.createElement('div')
+      opts.className = 'lang-options'
+
+      ;[
+        { id: 'ru', flag: '🇷🇺', label: 'Русский' },
+        { id: 'en', flag: '🇬🇧', label: 'English' },
+      ].forEach(({ id, flag, label }) => {
+        const btn = document.createElement('button')
+        btn.className = 'lang-option' + (selectedLang === id ? ' selected' : '')
+        btn.dataset.lang = id
+
+        const f = Object.assign(document.createElement('span'), { className: 'flag', textContent: flag })
+        const l = Object.assign(document.createElement('span'), { textContent: label })
+        btn.append(f, l)
+
+        btn.addEventListener('click', () => {
+          selectedLang = id
+          document.documentElement.lang = id
+          document.querySelectorAll('.lang-option').forEach(b =>
+            b.classList.toggle('selected', b.dataset.lang === id)
+          )
+          // Обновляем тексты без перерисовки
+          const titleEl = document.getElementById('dynTitle')
+          const subEl   = document.getElementById('dynSub')
+          if (titleEl) titleEl.textContent = t('step0Title')
+          if (subEl)   subEl.textContent   = t('step0Sub')
+          document.getElementById('btnNext').textContent = t('next')
+          document.getElementById('btnSkip').textContent = t('skip')
+        })
+
+        opts.appendChild(btn)
+      })
+
+      el.append(logo, title, sub, opts)
+    }
+
+    function renderTheme(el) {
+      el.innerHTML = ''
+
+      const title = Object.assign(document.createElement('div'), {
+        className: 'step-title', textContent: t('step1Title'),
+      })
+
+      const sub = Object.assign(document.createElement('div'), {
+        className: 'step-subtitle',
+      })
+      sub.style.whiteSpace = 'pre-line'
+      sub.textContent = t('step1Sub')
+
+      const grid = document.createElement('div')
+      grid.className = 'theme-options'
+
+      THEMES.forEach(id => {
+        const card = document.createElement('button')
+        card.className = `theme-option swatch-${id}` + (selectedTheme === id ? ' selected' : '')
+        card.dataset.theme = id
+
+        const swatch = document.createElement('div')
+        swatch.className = 'theme-swatch'
+        const bar  = Object.assign(document.createElement('div'), { className: 'theme-swatch-bar' })
+        const dot  = Object.assign(document.createElement('div'), { className: 'theme-swatch-dot' })
+        const dot2 = Object.assign(document.createElement('div'), { className: 'theme-swatch-dot2' })
+        swatch.append(bar, dot, dot2)
+
+        const name = Object.assign(document.createElement('div'), {
+          className: 'theme-name',
+          textContent: t('themes')[id] || id,
+        })
+
+        card.append(swatch, name)
+
+        card.addEventListener('click', () => {
+          selectedTheme = id
+          document.querySelectorAll('.theme-option').forEach(c =>
+            c.classList.toggle('selected', c.dataset.theme === id)
+          )
+          // Применяем тему к самой странице мгновенно
+          applyPageTheme(id)
+        })
+
+        grid.appendChild(card)
+      })
+
+      el.append(title, sub, grid)
+    }
+
+    function renderDone(el) {
+      el.innerHTML = ''
+
+      const icon = Object.assign(document.createElement('div'), {
+        className: 'done-icon', textContent: '✓',
+      })
+      const title = Object.assign(document.createElement('div'), {
+        className: 'step-title', textContent: t('step2Title'),
+      })
+      const sub = Object.assign(document.createElement('div'), {
+        className: 'step-subtitle', textContent: t('step2Sub'),
+      })
+
+      // Кнопка сброса настроек
+      const resetBtn = document.createElement('button')
+      resetBtn.style.cssText = `
+        margin-top: 32px;
+        background: none;
+        border: none;
+        color: var(--text2);
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        opacity: 0.6;
+        transition: opacity 0.15s;
+      `
+      resetBtn.textContent = selectedLang === 'en' ? 'Reset all settings' : 'Сбросить все настройки'
+      resetBtn.onmouseenter = () => { resetBtn.style.opacity = '1' }
+      resetBtn.onmouseleave = () => { resetBtn.style.opacity = '0.6' }
+      resetBtn.onclick = async () => {
+        if (window.electronAgent?.resetSettings) {
+          await window.electronAgent.resetSettings()
+          // Перезапускаем онбординг с нуля
+          selectedLang = 'ru'
+          selectedTheme = 'deep-ocean'
+          step = 0
+          applyPageTheme(selectedTheme)
+          renderStep()
+        }
+      }
+
+      el.append(icon, title, sub, resetBtn)
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────────
+    document.getElementById('btnNext').addEventListener('click', async () => {
+      if (step < TOTAL_STEPS - 1) {
+        step++
+        renderStep()
+      } else {
+        await save()
+        launch()
+      }
+    })
+
+    document.getElementById('btnBack').addEventListener('click', () => {
+      if (step > 0) { step--; renderStep() }
+    })
+
+    // Пропустить — запускаем Gemini без сохранения чего-либо
+    document.getElementById('btnSkip').addEventListener('click', () => {
+      launch()
+    })
+
+    // ── Save & launch ──────────────────────────────────────────────────────
+    async function save() {
+      if (!window.electronAgent) return
+      try {
+        await window.electronAgent.setLanguage(selectedLang)
+        await window.electronAgent.setTheme(selectedTheme)
+      } catch (e) {
+        console.error('[Settings] save error:', e)
+      }
+    }
+
+    function launch() {
+      // Если открыто как отдельное окно — просто закрываем его
+      // Если открыто как основное окно (онбординг) — переходим в Gemini
+      if (window.electronAgent) {
+        window.electronAgent.openGemini().catch(() => {})
+      }
+      window.close()
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    async function init() {
+      if (window.electronAgent) {
+        try {
+          const lr = await window.electronAgent.getLanguage()
+          if (lr?.language) selectedLang = lr.language
+
+          const tr = await window.electronAgent.getTheme()
+          if (tr?.theme) selectedTheme = tr.theme
+        } catch (_) {}
+      }
+
+      // Применяем текущую тему к странице сразу
+      applyPageTheme(selectedTheme)
+      renderStep()
+    }
+
+    init()
+  </script>
+</body>
+</html>
