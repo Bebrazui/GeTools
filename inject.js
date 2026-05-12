@@ -969,6 +969,17 @@
       caret-color: transparent !important;
       pointer-events: none !important;
     }
+
+    /* Скрываем текст иконок наших пунктов в расширенном сайдбаре */
+    .gemini-agent-toolbox-item .mdc-list-item__start {
+      font-size: 20px !important;
+      overflow: hidden !important;
+      text-indent: 0 !important;
+    }
+    /* Текст иконки не должен быть виден как обычный текст */
+    .gemini-agent-toolbox-item .mdc-list-item__start::after {
+      content: none !important;
+    }
   `
   document.head.appendChild(style)
 
@@ -3335,6 +3346,8 @@
     }
     iconEl.setAttribute('data-mat-icon-name', icon)
     iconEl.setAttribute('fonticon', icon)
+    // Очищаем через DOM (не innerHTML — Trusted Types блокирует)
+    while (iconEl.firstChild) iconEl.removeChild(iconEl.firstChild)
     iconEl.textContent = icon
 
     // Текст
@@ -3464,7 +3477,7 @@
   function createUltraThinkButton() {
     const btn = createToolboxItem({
       id: 'gemini-agent-ultrathink',
-      icon: 'psychology',
+      icon: 'auto_awesome',
       label: 'Ultra Think ' + (ultraThinkEnabled ? 'ON' : 'OFF'),
       checked: ultraThinkEnabled,
       onClick: () => {
